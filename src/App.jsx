@@ -2,25 +2,21 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
 // ════════════════════════════════════════════════════════════════════
-// 1. 🎨 CONFIGURACIÓN DE TU MARCA (Cambia estos datos)
+// 1. 🎨 CONFIGURACIÓN DE TU MARCA
 // ════════════════════════════════════════════════════════════════════
 const BRAND = {
   name: "DELIBER",
-  companyLogo: "https://somosdeliber.com/wp-content/uploads/logo-deliber.png", // <-- Pega aquí la URL de tu logo (ej: "https://somosdeliber.com/logo.png"). Si lo dejas vacío, saldrá el texto.
-  primary: "#0071cb",    // Color principal (Cabeceras, Botones primarios)
-  secondary: "#00a2a3",  // Color secundario (Acentos, Detalles)
-  accent: "#ff7d6a",     // Color de destaque (Rappel, Alertas)
-  bg: "#f4f7fa",         // Color de fondo de la app
-  card: "#ffffff"        // Color de las tarjetas
+  companyLogo: "https://www.scholarum.es/wp-content/uploads/footer/logo-deliber.svg", 
+  primary: "#1b6b93",    
+  secondary: "#00897b",  
+  accent: "#e5a100",     
+  bg: "#f4f7fa",         
+  card: "#ffffff"        
 };
 
-// ════════════════════════════════════════════════════════════════════
-// 2. 🔌 CONEXIONES (Apps Script y n8n)
-// ════════════════════════════════════════════════════════════════════
 const API = "https://script.google.com/macros/s/AKfycbwCYoLIusztmA7AXeEx8HnVprZoQJFMW-vIslvmgFNdvzt_NoY5d8w9nNOLP2btQ0b0/exec";
-const N8N_WEBHOOK_URL = ""; // <-- PEGA AQUÍ LA URL DE TU WEBHOOK DE N8N PARA LOS ISBN FALTANTES
+const N8N_WEBHOOK_URL = ""; 
 
-// ── Lógica interna de colores ──
 const C = {
   ink: '#0c1e30', navy: '#122d47', blue: BRAND.primary, teal: BRAND.secondary, 
   gold: BRAND.accent, coral: '#d4513d', slate: '#6b7f94', green: '#2a7d3f', 
@@ -76,6 +72,9 @@ export default function App() {
   const [nombre, setNombre] = useState('');
   const [responsable, setResponsable] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
+  const [pin, setPin] = useState(''); // PIN de seguridad
+  const [pinInput, setPinInput] = useState(''); // Lo que teclea el usuario al entrar
+  const [isAuthenticated, setIsAuthenticated] = useState(false); // ¿Ha metido el PIN correcto?
   
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -91,18 +90,19 @@ export default function App() {
   const [shareUrl, setShareUrl] = useState('');
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
-  const [webhookSent, setWebhookSent] = useState(false); // Estado para el botón de n8n
+  const [webhookSent, setWebhookSent] = useState(false); 
   const fileRef = useRef(null);
 
   const isC = viewMode === 'comercial';
 
   useEffect(() => { if (isC && tab === 'propuesta') setTab('resumen'); }, [isC, tab]);
 
+  // Carga inicial por URL
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const id = p.get('id'), modo = p.get('modo');
     if (id) {
-      setLoadingMsg('Abriendo propuesta segura...');
+      setLoadingMsg('Verificando acceso seguro...');
       setLoading(true); setStep(1);
       apiCall('cargar', { id, modo: modo || 'colegio' })
         .then(res => {
@@ -117,22 +117,43 @@ export default function App() {
           if (loadedDtos._meta) {
             setLogoUrl(loadedDtos._meta.logoUrl || '');
             setResponsable(loadedDtos._meta.responsable || '');
+            setPin(loadedDtos._meta.pin || ''); // Cargamos el PIN guardado
             delete loadedDtos._meta;
           }
           setColDtos(loadedDtos);
           
           setViewMode(modo === 'colegio' ? 'colegio' : 'comercial');
           setTab(modo === 'colegio' ? 'propuesta' : 'resumen'); 
-          setStep(modo === 'colegio' ? 3 : 2);
+          
+          // Si no hay PIN o ya lo sabíamos, pasamos. Si no, pedimos contraseña.
+          if (!loadedDtos._meta?.pin) {
+            setIsAuthenticated(true);
+            setStep(modo === 'colegio' ? 3 : 2);
+          } else {
+            setStep(99); // Paso 99 es la pantalla de bloqueo
+          }
         })
         .catch(e => { setError(e.message); setStep(0); })
         .finally(() => setLoading(false));
+    } else {
+      setIsAuthenticated(true); // Modo creación, no pide PIN
     }
   }, []);
 
+  const handleLogin = () => {
+    if (pinInput === pin) {
+      setIsAuthenticated(true);
+      setStep(viewMode === 'colegio' ? 3 : 2);
+    } else {
+      alert("Contraseña incorrecta. Por favor, contacta con tu asesor comercial.");
+    }
+  };
+
   const handleCruzar = useCallback(async () => {
+    if (!pin || pin.length < 4) { setError('Debes establecer un PIN de al menos 4 caracteres por seguridad.'); return; }
     const entries = parseInput(inputText);
     if (!entries.length) { setError('No se detectaron ISBNs válidos.'); return; }
+    
     setLoadingMsg('Cruzando con el catálogo de libros...');
     setLoading(true); setError(''); setStep(1);
     try {
@@ -154,18 +175,17 @@ export default function App() {
         finalDtos[prov] = { scho: avg, col: avg };
       });
       setColDtos(finalDtos); setStep(2); setTab('resumen');
-      
-      // Mostrar la pestaña de error automáticamente si faltan libros para que el comercial se dé cuenta
       if(r.notFound && r.notFound.length > 0) setTab('notFound');
 
     } catch (e) { setError(e.message); setStep(0); }
     finally { setLoading(false); }
-  }, [inputText]);
+  }, [inputText, pin]);
 
   const handleGuardar = useCallback(async () => {
     if (!editableData) return; setSaving(true);
     try {
-      const dtosConMeta = { ...colDtos, _meta: { logoUrl, responsable } };
+      // Guardamos el PIN junto al logo en los metadatos
+      const dtosConMeta = { ...colDtos, _meta: { logoUrl, responsable, pin } };
       const saveData = { nombre, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: dtosConMeta, datos: editableData };
       const r = await apiCall('guardar', { data: saveData });
       if (r.error) throw new Error(r.error);
@@ -173,29 +193,14 @@ export default function App() {
       setShareUrl(url);
     } catch (e) { alert('Error: ' + e.message); }
     finally { setSaving(false); }
-  }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable]);
+  }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable, pin]);
 
-  // ── FUNCIÓN PARA MANDAR DATOS A N8N ──
   const handleSendWebhook = async () => {
-    if(!N8N_WEBHOOK_URL) {
-      alert("Primero debes añadir la URL de tu Webhook de n8n en el código (línea 16).");
-      return;
-    }
+    if(!N8N_WEBHOOK_URL) { alert("Añade la URL de tu Webhook de n8n en el código."); return; }
     try {
-      await fetch(N8N_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          colegio: nombre,
-          fecha: new Date().toISOString(),
-          totalFaltantes: data.notFound.length,
-          isbns: data.notFound
-        })
-      });
+      await fetch(N8N_WEBHOOK_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ colegio: nombre, fecha: new Date().toISOString(), isbns: data.notFound }) });
       setWebhookSent(true);
-    } catch (e) {
-      alert("Hubo un error al enviar a n8n. Revisa la consola o los CORS del webhook.");
-    }
+    } catch (e) { alert("Hubo un error al enviar a n8n."); }
   };
 
   const updateAlumnos = useCallback((isbn, val) => {
@@ -204,16 +209,11 @@ export default function App() {
 
   const handleFile = useCallback(e => {
     const f = e.target.files[0]; if (!f) return;
-    const r = new FileReader();
-    r.onload = ev => setInputText(ev.target.result);
-    r.readAsText(f);
+    const r = new FileReader(); r.onload = ev => setInputText(ev.target.result); r.readAsText(f);
   }, []);
 
-  // ── MOTOR DE CÁLCULO BLINDADO (Anti NaN) ──
   const calc = useMemo(() => {
     if (!editableData?.found) return null;
-    
-    // Forzamos a que siempre sea un número (0 si falla)
     const probSegura = parseFloat(probabilidad) || 0;
     const probFactor = probSegura / 100;
 
@@ -231,9 +231,7 @@ export default function App() {
       const costeCol = coste * (1 - difFactor);
       
       const isPapel = (book.formato || 'Papel').toLowerCase().includes('papel');
-      const pctPapel = parseFloat(costePapel) || 0;
-      const pctDigital = parseFloat(costeDigital) || 0;
-      const opPct = (isPapel ? pctPapel : pctDigital) / 100;
+      const opPct = (isPapel ? (parseFloat(costePapel) || 0) : (parseFloat(costeDigital) || 0)) / 100;
       
       const alumsEstimados = alumnos * probFactor;
       const tv = alumsEstimados * pvp;
@@ -258,11 +256,9 @@ export default function App() {
       if (!bp[k]) bp[k] = { p: k, n: 0, tv: 0, tcs: 0, tcc: 0, costOp: 0, rap: 0 };
       bp[k].n++; bp[k].tv += r.tv; bp[k].tcs += r.tcs; bp[k].tcc += r.tcc; bp[k].costOp += r.costOp; bp[k].rap += r.rap;
     });
-    const prov = Object.values(bp).map(p => ({
-      ...p, m: p.tv - p.tcs, ben: (p.tv - p.tcs - p.costOp) + p.rap
-    })).sort((a,b) => b.tv - a.tv);
-
+    const prov = Object.values(bp).map(p => ({ ...p, m: p.tv - p.tcs, ben: (p.tv - p.tcs - p.costOp) + p.rap })).sort((a,b) => b.tv - a.tv);
     const totalAlumnos = rows.reduce((s, r) => s + (r.alumnos || 0), 0);
+    
     return { rows, prov, tv, tcs, tcc, totalCostOp, comision, rap, benColegio, t: rows.length, totalAlumnos };
   }, [editableData, colDtos, costePapel, costeDigital, probabilidad]);
 
@@ -276,7 +272,7 @@ export default function App() {
   };
 
   return (
-    <div style={{ background: C.light, minHeight: '100vh', fontFamily: 'Outfit, sans-serif', color: C.ink }}>
+    <div style={{ background: C.light, minHeight: '100vh', fontFamily: 'Outfit, sans-serif', color: C.ink, display: 'flex', flexDirection: 'column' }}>
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
       
       {/* CABECERA CORPORATIVA DE LA APP */}
@@ -293,7 +289,7 @@ export default function App() {
               <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{nombre ? `Propuesta: ${nombre}` : "Portal Escolar"}</h1>
             </div>
           </div>
-          {step >= 2 && step !== 3 && (
+          {isAuthenticated && step >= 2 && step !== 3 && (
             <div style={{ display: 'flex', background: 'rgba(255,255,255,0.1)', padding: 4, borderRadius: 8 }}>
               <button onClick={() => setViewMode('comercial')} style={{ padding: '6px 14px', border: 'none', borderRadius: 6, background: isC ? '#fff' : 'transparent', color: isC ? C.blue : '#fff', fontWeight: 700, cursor: 'pointer' }}>🔧 Comercial</button>
               <button onClick={() => setViewMode('colegio')} style={{ padding: '6px 14px', border: 'none', borderRadius: 6, background: !isC ? '#fff' : 'transparent', color: !isC ? C.blue : '#fff', fontWeight: 700, cursor: 'pointer' }}>🏫 Vista Cliente</button>
@@ -302,11 +298,30 @@ export default function App() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '30px 20px' }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '30px 20px', flex: 1, width: '100%', boxSizing: 'border-box' }}>
         
-        {step === 0 && (
+        {/* PASO 99: PANTALLA DE LOGIN DE SEGURIDAD */}
+        {step === 99 && (
+          <div style={{ ...sty.card, maxWidth: 450, margin: '80px auto', textAlign: 'center' }}>
+            <div style={{ fontSize: 40, marginBottom: 15 }}>🔒</div>
+            <h2 style={{ color: C.navy, margin: '0 0 10px 0' }}>Propuesta Privada</h2>
+            <p style={{ color: C.slate, fontSize: 14, marginBottom: 25 }}>Por favor, introduce el PIN de acceso proporcionado por tu asesor comercial de {BRAND.name}.</p>
+            <input 
+              type="password" 
+              placeholder="••••" 
+              value={pinInput} 
+              onChange={e => setPinInput(e.target.value)} 
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              style={{ ...sty.input, textAlign: 'center', fontSize: 24, letterSpacing: 8, marginBottom: 20 }} 
+            />
+            <button onClick={handleLogin} style={{ ...sty.btn, width: '100%' }}>Acceder al Portal</button>
+          </div>
+        )}
+
+        {/* PASO 0: CREACIÓN COMERCIAL */}
+        {isAuthenticated && step === 0 && (
           <div style={sty.card}>
-            <h2 style={{ marginTop: 0, fontSize: 24, color: C.navy, borderBottom: `2px solid ${C.muted}`, paddingBottom: 15 }}>Crear Nueva Propuesta</h2>
+            <h2 style={{ marginTop: 0, fontSize: 24, color: C.navy, borderBottom: `2px solid ${C.muted}`, paddingBottom: 15 }}>Crear Nueva Propuesta Segura</h2>
             
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 20, marginBottom: 25, background: '#f8fafc', padding: 20, borderRadius: 12 }}>
               <div>
@@ -316,6 +331,10 @@ export default function App() {
               <div>
                 <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Responsable (Opcional)</label>
                 <input style={sty.input} value={responsable} onChange={e => setResponsable(e.target.value)} placeholder="Ej: María García (Dirección)" />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: C.coral }}>PIN de Acceso (Cliente)</label>
+                <input type="password" style={{ ...sty.input, borderColor: C.coral }} value={pin} onChange={e => setPin(e.target.value)} placeholder="Ej: 1234" />
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>URL Logotipo del Colegio (Opcional)</label>
@@ -338,21 +357,20 @@ export default function App() {
             </div>
             {error && <div style={{ marginTop: 15, padding: '15px', background: '#fef2f0', color: C.coral, borderRadius: 8, fontWeight: 600 }}>⚠️ {error}</div>}
             <div style={{ marginTop: 25, textAlign: 'right' }}>
-              <button onClick={handleCruzar} disabled={!inputText.trim()} style={{ ...sty.btn, opacity: inputText.trim() ? 1 : 0.5, fontSize: 16 }}>Generar propuesta →</button>
+              <button onClick={handleCruzar} disabled={!inputText.trim() || !pin} style={{ ...sty.btn, opacity: inputText.trim() && pin ? 1 : 0.5, fontSize: 16 }}>Generar propuesta →</button>
             </div>
           </div>
         )}
 
-        {step === 1 && (
+        {isAuthenticated && step === 1 && (
           <div style={{ ...sty.card, textAlign: 'center', padding: '100px 20px' }}>
             <div style={{ fontSize: 50, marginBottom: 20 }}>⏳</div>
             <h2 style={{ color: C.navy, margin: 0 }}>{loadingMsg}</h2>
           </div>
         )}
 
-        {(step === 2 || step === 3) && calc && (
+        {isAuthenticated && (step === 2 || step === 3) && calc && (
           <>
-            {/* CONTROLES COMERCIALES */}
             {isC && (
               <div style={{ background: '#fff', padding: '15px 25px', borderRadius: 12, marginBottom: 20, border: `1px solid ${C.blue}`, display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: 200 }}>
@@ -375,12 +393,12 @@ export default function App() {
 
             {shareUrl && isC && (
               <div style={{ padding: 20, background: '#e8f5e9', borderRadius: 12, marginBottom: 20, border: '1px solid #c8e6c9', fontSize: 15, textAlign: 'center' }}>
-                <strong style={{ color: C.green }}>¡Enlace listo para enviar al colegio!</strong><br/><br/>
+                <strong style={{ color: C.green }}>¡Enlace listo para enviar al colegio!</strong><br/>
+                <span style={{ fontSize: 13, color: C.slate }}>PIN de acceso para el cliente: <strong>{pin}</strong></span><br/><br/>
                 <a href={shareUrl} target="_blank" rel="noreferrer" style={{ color: C.blue, fontWeight: 'bold', wordBreak: 'break-all' }}>{shareUrl}</a>
               </div>
             )}
 
-            {/* PESTAÑAS */}
             <div style={{ display: 'flex', gap: 10, marginBottom: 25, flexWrap: 'wrap' }}>
               {!isC && <button onClick={() => setTab('propuesta')} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'propuesta' ? C.blue : '#fff', color: tab === 'propuesta' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>Propuesta Integral</button>}
               {['resumen', 'detalle'].map(t => (
@@ -390,7 +408,6 @@ export default function App() {
               {data?.notFound?.length > 0 && <button onClick={() => setTab('notFound')} style={{ padding: '10px 20px', borderRadius: 8, border: `2px solid ${C.coral}`, background: tab === 'notFound' ? C.coral : '#fff', color: tab === 'notFound' ? '#fff' : C.coral, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>⚠️ {data.notFound.length} Faltantes</button>}
             </div>
 
-            {/* 1. PROPUESTA (CLIENTE) */}
             {!isC && tab === 'propuesta' && (
               <div style={{ animation: 'fadeIn 0.5s ease-in' }}>
                 <div style={{ background: `linear-gradient(135deg, ${C.navy}, ${C.blue})`, borderRadius: 16, padding: '50px 40px', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 30, marginBottom: 30, boxShadow: '0 10px 30px rgba(27, 107, 147, 0.2)' }}>
@@ -454,7 +471,6 @@ export default function App() {
               </div>
             )}
 
-            {/* 2. RESUMEN */}
             {tab === 'resumen' && (
               <div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15, marginBottom: 25 }}>
@@ -486,10 +502,10 @@ export default function App() {
                     </ResponsiveContainer>
                   </div>
                 </div>
+                <p style={{ fontSize: 12, color: C.slate, fontStyle: 'italic', textAlign: 'center' }}>* Datos aproximados. Sujeto a variaciones finales de compra y actualización de tarifas anuales.</p>
               </div>
             )}
 
-            {/* 3. DETALLE */}
             {tab === 'detalle' && (
               <div style={sty.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -529,7 +545,6 @@ export default function App() {
               </div>
             )}
 
-            {/* 4. EDITORIALES (Solo Comercial) */}
             {tab === 'editoriales' && isC && (
               <div style={sty.card}>
                 <h3 style={{ marginTop: 0 }}>Descuentos y Rappel por Editorial</h3>
@@ -564,7 +579,6 @@ export default function App() {
               </div>
             )}
 
-            {/* 5. N8N / NO ENCONTRADOS */}
             {tab === 'notFound' && data?.notFound && (
               <div style={{ ...sty.card, border: `2px solid ${C.coral}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 20 }}>
@@ -572,10 +586,7 @@ export default function App() {
                     <h3 style={{ marginTop: 0, color: C.coral }}>⚠️ Atención: {data.notFound.length} ISBNs ignorados (No están en catálogo)</h3>
                     <p style={{ color: C.slate, margin: 0 }}>El comercial debe decidir si crear la propuesta sin ellos o avisar a Compras para que los den de alta en el Excel.</p>
                   </div>
-                  <button 
-                    onClick={handleSendWebhook} 
-                    disabled={webhookSent}
-                    style={{ ...sty.btn, background: webhookSent ? C.green : C.ink, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <button onClick={handleSendWebhook} disabled={webhookSent} style={{ ...sty.btn, background: webhookSent ? C.green : C.ink, display: 'flex', alignItems: 'center', gap: 10 }}>
                     {webhookSent ? "✅ Enviado a Compras" : "✉️ Avisar a Compras (n8n)"}
                   </button>
                 </div>
@@ -590,6 +601,32 @@ export default function App() {
           </>
         )}
       </div>
+
+      {/* FOOTER CORPORATIVO (Basado en el HTML de Scholarum) */}
+      <div style={{ background: '#ffffff', borderTop: '1px solid #e9ecf1', padding: '40px 20px', marginTop: 'auto' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', background: '#ffffff', border: '1px solid #f1f1f1', borderRadius: 15, padding: '20px', gap: 30 }}>
+            {/* Logo Principal */}
+            <div style={{ borderRight: '1px solid #f1f1f1', paddingRight: 30 }}>
+              <a href="https://www.scholarum.es" target="_blank" rel="noreferrer">
+                <img src="https://www.scholarum.es/wp-content/uploads/footer/logo-scholarum.svg" alt="Scholarum" style={{ height: 40 }} />
+              </a>
+            </div>
+            {/* Logos Secundarios (Con efecto hover) */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 25, alignItems: 'center', justifyContent: 'center' }}>
+              <LogoHoverLink href="https://somosdeliber.com" src="https://www.scholarum.es/wp-content/uploads/footer/logo-deliber.svg" height={25} />
+              <LogoHoverLink href="https://zonacoles.es/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-zonacoles.svg" height={28} />
+              <LogoHoverLink href="https://zonafp.com/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-zonafp.svg" height={22} />
+              <LogoHoverLink href="https://lareddual.com/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-lareddual.svg" height={25} />
+              <LogoHoverLink href="https://laferiadeloscolegios.com/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-laferiadeloscolegios.svg" height={25} />
+              <LogoHoverLink href="https://yoin.es/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-yoin.svg" height={22} />
+            </div>
+          </div>
+          <p style={{ textAlign: 'center', color: C.slate, fontSize: 13, marginTop: 20 }}>
+            © Copyright {new Date().getFullYear()} | Scholarum Educación. Todos los derechos reservados.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -601,5 +638,15 @@ function KPI({ label, value, sub, icon, accent, color }) {
       <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.5px' }}>{value}</div>
       {sub && <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6, fontWeight: 500 }}>{sub}</div>}
     </div>
+  );
+}
+
+// Componente para el efecto de escala de grises al pasar el ratón (Footer)
+function LogoHoverLink({ href, src, height }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <a href={href} target="_blank" rel="noreferrer" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <img src={src} alt="Brand" style={{ height: height, filter: hover ? 'grayscale(0)' : 'grayscale(1)', opacity: hover ? 1 : 0.7, transition: 'all 0.3s ease', cursor: 'pointer' }} />
+    </a>
   );
 }
