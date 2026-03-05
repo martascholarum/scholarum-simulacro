@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 
 // ── CONFIGURACIÓN DE MARCA ──
 const BRAND = {
-  name: "SCHOLARUM",
+  name: "DELIBER",       // Cambiado a Deliber por la URL que pasaste
   primary: "#1b6b93",    
   secondary: "#00897b",  
   accent: "#e5a100",     
@@ -63,8 +63,13 @@ async function apiCall(action, params = {}) {
 
 export default function App() {
   const [step, setStep] = useState(0);
-  const [loadingMsg, setLoadingMsg] = useState('Cargando...'); // FIX: Mensaje dinámico
+  const [loadingMsg, setLoadingMsg] = useState('Cargando...');
+  
+  // ── CAMPOS DE PERSONALIZACIÓN ──
   const [nombre, setNombre] = useState('');
+  const [responsable, setResponsable] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
+  
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -99,9 +104,18 @@ export default function App() {
           setData(res.datos); setEditableData(res.datos);
           setCostePapel(res.costeOp || 12); setCosteDigital(res.costeOpDigital || 10);
           setProbabilidad(res.prob || 100);
-          setColDtos(res.condiciones || {});
+          
+          // Lógica Ninja para leer los metadatos sin tocar el backend
+          const loadedDtos = { ...(res.condiciones || {}) };
+          if (loadedDtos._meta) {
+            setLogoUrl(loadedDtos._meta.logoUrl || '');
+            setResponsable(loadedDtos._meta.responsable || '');
+            delete loadedDtos._meta;
+          }
+          setColDtos(loadedDtos);
+          
           setViewMode(modo === 'colegio' ? 'colegio' : 'comercial');
-          setTab(modo === 'colegio' ? 'propuesta' : 'resumen'); // El colegio entra directo a la propuesta
+          setTab(modo === 'colegio' ? 'propuesta' : 'resumen'); 
           setStep(modo === 'colegio' ? 3 : 2);
         })
         .catch(e => { setError(e.message); setStep(0); })
@@ -140,14 +154,16 @@ export default function App() {
   const handleGuardar = useCallback(async () => {
     if (!editableData) return; setSaving(true);
     try {
-      const saveData = { nombre, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: colDtos, datos: editableData };
+      // Guardamos la personalización inyectándola en las condiciones de forma transparente
+      const dtosConMeta = { ...colDtos, _meta: { logoUrl, responsable } };
+      const saveData = { nombre, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: dtosConMeta, datos: editableData };
       const r = await apiCall('guardar', { data: saveData });
       if (r.error) throw new Error(r.error);
       const url = `${window.location.origin}${window.location.pathname}?id=${r.id}&modo=colegio`;
       setShareUrl(url);
     } catch (e) { alert('Error: ' + e.message); }
     finally { setSaving(false); }
-  }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos]);
+  }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable]);
 
   const updateAlumnos = useCallback((isbn, val) => {
     setEditableData(prev => ({ ...prev, found: prev.found.map(b => b.isbn === isbn ? { ...b, alumnos: parseInt(val) || 0 } : b) }));
@@ -209,7 +225,7 @@ export default function App() {
   const sty = {
     card: { background: C.card, borderRadius: 16, padding: 30, boxShadow: '0 8px 30px rgba(0,0,0,0.04)', border: `1px solid ${C.muted}`, marginBottom: 25 },
     input: { padding: '12px 16px', borderRadius: 8, border: `1.5px solid ${C.muted}`, fontSize: 14, width: '100%', boxSizing: 'border-box' },
-    btn: { padding: '12px 24px', borderRadius: 8, background: C.blue, color: '#fff', fontWeight: 600, border: 'none', cursor: 'pointer' },
+    btn: { padding: '12px 24px', borderRadius: 8, background: C.blue, color: '#fff', fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all 0.3s ease' },
     btn2: { padding: '10px 20px', borderRadius: 8, border: `2px dashed ${C.blue}`, background: 'transparent', color: C.blue, cursor: 'pointer', fontWeight: 600 }
   };
 
@@ -217,12 +233,15 @@ export default function App() {
     <div style={{ background: C.light, minHeight: '100vh', fontFamily: 'Outfit, sans-serif', color: C.ink }}>
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
       
-      {/* HEADER */}
-      <div style={{ background: `linear-gradient(135deg, ${C.navy}, ${C.blue})`, padding: '24px 40px', color: '#fff' }}>
+      {/* HEADER CORPORATIVO */}
+      <div style={{ background: `linear-gradient(135deg, ${C.navy}, ${C.blue})`, padding: '20px 40px', color: '#fff', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: 11, letterSpacing: 3, fontWeight: 700, opacity: 0.7 }}>{BRAND.name}</div>
-            <h1 style={{ margin: 0, fontSize: 22 }}>{nombre || "Portal Escolar"}</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
+            <div style={{ background: '#fff', color: C.blue, fontWeight: 900, fontSize: 20, padding: '5px 12px', borderRadius: 8, letterSpacing: -1 }}>D.</div>
+            <div>
+              <div style={{ fontSize: 11, letterSpacing: 3, fontWeight: 700, opacity: 0.8 }}>{BRAND.name} EDUCACIÓN</div>
+              <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{nombre ? `Propuesta: ${nombre}` : "Portal Escolar"}</h1>
+            </div>
           </div>
           {step >= 2 && step !== 3 && (
             <div style={{ display: 'flex', background: 'rgba(255,255,255,0.1)', padding: 4, borderRadius: 8 }}>
@@ -235,13 +254,27 @@ export default function App() {
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '30px 20px' }}>
         
+        {/* PASO 0: CREACIÓN COMERCIAL */}
         {step === 0 && (
           <div style={sty.card}>
-            <h2 style={{ marginTop: 0, fontSize: 24, color: C.navy }}>Nuevo simulacro</h2>
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Nombre del colegio</label>
-              <input style={{...sty.input, maxWidth: 400}} value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: Colegio Humanitas" />
+            <h2 style={{ marginTop: 0, fontSize: 24, color: C.navy, borderBottom: `2px solid ${C.muted}`, paddingBottom: 15 }}>Crear Nueva Propuesta</h2>
+            
+            {/* Campos de personalización */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 20, marginBottom: 25, background: '#f8fafc', padding: 20, borderRadius: 12 }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Nombre del centro</label>
+                <input style={sty.input} value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: Colegio Humanitas" />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Responsable (Opcional)</label>
+                <input style={sty.input} value={responsable} onChange={e => setResponsable(e.target.value)} placeholder="Ej: María García (Dirección)" />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>URL Logotipo del Colegio (Opcional)</label>
+                <input style={sty.input} value={logoUrl} onChange={e => setLogoUrl(e.target.value)} placeholder="Ej: https://colegio.com/logo.png" />
+              </div>
             </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
               <div>
                 <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Pega ISBNs + Alumnos</label>
@@ -249,15 +282,15 @@ export default function App() {
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>O sube un archivo (CSV/TXT)</label>
-                <div style={{ border: `2px dashed ${C.muted}`, borderRadius: 10, padding: '40px 20px', textAlign: 'center', background: '#f9fafb' }}>
+                <div style={{ border: `2px dashed ${C.muted}`, borderRadius: 10, padding: '40px 20px', textAlign: 'center', background: '#fff' }}>
                   <input type="file" ref={fileRef} accept=".csv,.txt,.tsv" onChange={handleFile} style={{ display: 'none' }} />
                   <button onClick={() => fileRef.current?.click()} style={sty.btn2}>📄 Seleccionar Archivo</button>
                 </div>
               </div>
             </div>
             {error && <div style={{ marginTop: 15, padding: '15px', background: '#fef2f0', color: C.coral, borderRadius: 8, fontWeight: 600 }}>⚠️ {error}</div>}
-            <div style={{ marginTop: 20, textAlign: 'right' }}>
-              <button onClick={handleCruzar} disabled={!inputText.trim()} style={{ ...sty.btn, opacity: inputText.trim() ? 1 : 0.5 }}>Generar propuesta →</button>
+            <div style={{ marginTop: 25, textAlign: 'right' }}>
+              <button onClick={handleCruzar} disabled={!inputText.trim()} style={{ ...sty.btn, opacity: inputText.trim() ? 1 : 0.5, fontSize: 16 }}>Generar propuesta →</button>
             </div>
           </div>
         )}
@@ -271,7 +304,7 @@ export default function App() {
 
         {(step === 2 || step === 3) && calc && (
           <>
-            {/* CONTROLES COMERCIALES */}
+            {/* CONTROLES COMERCIALES (Ocultos para el colegio) */}
             {isC && (
               <div style={{ background: '#fff', padding: '15px 25px', borderRadius: 12, marginBottom: 20, border: `1px solid ${C.blue}`, display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: 200 }}>
@@ -295,82 +328,97 @@ export default function App() {
             {shareUrl && isC && (
               <div style={{ padding: 20, background: '#e8f5e9', borderRadius: 12, marginBottom: 20, border: '1px solid #c8e6c9', fontSize: 15, textAlign: 'center' }}>
                 <strong style={{ color: C.green }}>¡Enlace listo para enviar al colegio!</strong><br/><br/>
-                <a href={shareUrl} target="_blank" style={{ color: C.blue, fontWeight: 'bold', wordBreak: 'break-all' }}>{shareUrl}</a>
+                <a href={shareUrl} target="_blank" rel="noreferrer" style={{ color: C.blue, fontWeight: 'bold', wordBreak: 'break-all' }}>{shareUrl}</a>
               </div>
             )}
 
             {/* MENÚ DE PESTAÑAS */}
             <div style={{ display: 'flex', gap: 10, marginBottom: 25, flexWrap: 'wrap' }}>
-              {!isC && <button onClick={() => setTab('propuesta')} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'propuesta' ? C.blue : '#fff', color: tab === 'propuesta' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer' }}>Propuesta Integral</button>}
+              {!isC && <button onClick={() => setTab('propuesta')} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'propuesta' ? C.blue : '#fff', color: tab === 'propuesta' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>Propuesta Integral</button>}
               {['resumen', 'detalle'].map(t => (
-                <button key={t} onClick={() => setTab(t)} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === t ? C.blue : '#fff', color: tab === t ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize' }}>{t}</button>
+                <button key={t} onClick={() => setTab(t)} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === t ? C.blue : '#fff', color: tab === t ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>{t}</button>
               ))}
-              {isC && <button onClick={() => setTab('editoriales')} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'editoriales' ? C.blue : '#fff', color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer' }}>Editoriales y Rappel</button>}
+              {isC && <button onClick={() => setTab('editoriales')} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'editoriales' ? C.blue : '#fff', color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>Editoriales y Rappel</button>}
               {data?.notFound?.length > 0 && <button onClick={() => setTab('notFound')} style={{ padding: '10px 20px', borderRadius: 8, border: `2px solid ${C.coral}`, background: tab === 'notFound' ? C.coral : '#fff', color: tab === 'notFound' ? '#fff' : C.coral, fontWeight: 700, cursor: 'pointer' }}>⚠️ {data.notFound.length} No Encontrados</button>}
             </div>
 
             {/* 1. PESTAÑA PROPUESTA (LA LANDING PAGE DEL COLEGIO) */}
             {!isC && tab === 'propuesta' && (
               <div style={{ animation: 'fadeIn 0.5s ease-in' }}>
-                {/* HERO SECTION */}
-                <div style={{ background: `url('https://www.transparenttextures.com/patterns/cubes.png'), linear-gradient(135deg, ${C.navy}, ${C.blue})`, borderRadius: 16, padding: '50px 30px', color: '#fff', textAlign: 'center', marginBottom: 30, boxShadow: '0 10px 30px rgba(27, 107, 147, 0.2)' }}>
-                  <h2 style={{ margin: '0 0 15px 0', fontSize: 36 }}>Propuesta Integral para {nombre}</h2>
-                  <p style={{ fontSize: 18, opacity: 0.9, maxWidth: 700, margin: '0 auto', lineHeight: 1.6 }}>Externaliza la gestión de tus libros de texto con cero esfuerzo administrativo y maximiza los beneficios para el centro y las familias.</p>
+                {/* HERO SECTION PERSONALIZADO */}
+                <div style={{ background: `linear-gradient(135deg, ${C.navy}, ${C.blue})`, borderRadius: 16, padding: '50px 40px', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 30, marginBottom: 30, boxShadow: '0 10px 30px rgba(27, 107, 147, 0.2)' }}>
+                  <div style={{ flex: 1, minWidth: 300 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: 2, opacity: 0.8, marginBottom: 10, textTransform: 'uppercase' }}>Propuesta de colaboración</div>
+                    <h2 style={{ margin: '0 0 15px 0', fontSize: 38, lineHeight: 1.2 }}>{nombre} x {BRAND.name}</h2>
+                    {responsable && <p style={{ fontSize: 18, opacity: 0.9, margin: '0 0 15px 0', borderLeft: `3px solid ${C.gold}`, paddingLeft: 10 }}>A la atención de: <strong>{responsable}</strong></p>}
+                    <p style={{ fontSize: 16, opacity: 0.8, maxWidth: 600, margin: 0, lineHeight: 1.6 }}>Simplificamos los procesos para las familias y aumentamos la rentabilidad del colegio. Nosotros nos encargamos de todo.</p>
+                  </div>
+                  {logoUrl && (
+                    <div style={{ background: '#fff', padding: 15, borderRadius: '50%', width: 140, height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
+                      <img src={logoUrl} alt="Logo Colegio" style={{ maxWidth: '90%', maxHeight: '90%', objectFit: 'contain' }} onError={(e) => e.target.style.display='none'} />
+                    </div>
+                  )}
                 </div>
 
-                {/* CALCULADORA INTERACTIVA */}
-                <div style={{ ...sty.card, border: `2px solid ${C.teal}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 20 }}>
-                    <div style={{ flex: 1, minWidth: 250 }}>
-                      <h3 style={{ marginTop: 0, color: C.teal, display: 'flex', alignItems: 'center', gap: 10, fontSize: 22 }}>🧮 Calculadora de Beneficios</h3>
-                      <p style={{ color: C.slate, fontSize: 14, lineHeight: 1.5 }}>Utiliza este simulador para estimar el beneficio final del centro en función del porcentaje de familias que adquieran los libros en la plataforma.</p>
-                      <div style={{ marginTop: 20 }}>
+                {/* CALCULADORA INTERACTIVA Y DISCLAIMER */}
+                <div style={{ ...sty.card, border: `2px solid ${C.teal}`, position: 'relative' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 30 }}>
+                    <div style={{ flex: 1, minWidth: 300 }}>
+                      <h3 style={{ marginTop: 0, color: C.teal, display: 'flex', alignItems: 'center', gap: 10, fontSize: 22 }}>🧮 Simulador de Retorno</h3>
+                      <p style={{ color: C.slate, fontSize: 15, lineHeight: 1.5, margin: '10px 0 25px 0' }}>Descubre el retorno económico para tu centro ajustando la estimación de familias que utilizarán la plataforma de compra online.</p>
+                      
+                      <div style={{ background: '#f8fafc', padding: '15px 20px', borderRadius: 10 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                          <span style={{ fontWeight: 700, color: C.ink }}>Estimación de Compra</span>
+                          <span style={{ fontWeight: 700, color: C.ink }}>Familias estimadas</span>
                           <span style={{ fontWeight: 800, color: C.teal, fontSize: 18 }}>{probabilidad}%</span>
                         </div>
                         <input type="range" min="10" max="100" step="5" value={probabilidad} onChange={e => setProbabilidad(+e.target.value)} style={{ width: '100%', cursor: 'pointer', accentColor: C.teal }} />
                       </div>
+                      <p style={{ fontSize: 12, color: C.slate, marginTop: 15, fontStyle: 'italic' }}>* Datos aproximados. Sujeto a variaciones finales de compra y actualización de tarifas anuales.</p>
                     </div>
                     
-                    <div style={{ display: 'flex', gap: 15, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 15, flexWrap: 'wrap', alignItems: 'center' }}>
                       <KPI label="Beneficio Estimado" value={fmt(calc.benColegio)} accent />
-                      {calc.rap > 0 && <KPI label="Rappel Garantizado" value={fmt(calc.rap)} sub="Por condiciones del centro" color={C.coral} />}
+                      {calc.rap > 0 && <KPI label="Rappel Garantizado" value={fmt(calc.rap)} sub="Por mejora de condiciones" color={C.coral} />}
                     </div>
                   </div>
                 </div>
 
-                {/* PILARES */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 25, marginTop: 30 }}>
+                {/* PILARES DE VENTA (Sacados de la web oficial) */}
+                <h3 style={{ fontSize: 26, color: C.navy, textAlign: 'center', marginTop: 45, marginBottom: 30 }}>¿Por qué externalizar "La Tienda del Cole" con nosotros?</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 25 }}>
                   <div style={{ padding: 30, background: '#fff', borderRadius: 16, borderTop: `5px solid ${C.blue}`, boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
-                    <h3 style={{ margin: '0 0 15px 0', fontSize: 20 }}>📦 Gestión Logística Integral</h3>
-                    <p style={{ margin: 0, color: C.slate, fontSize: 15, lineHeight: 1.6 }}>Nos encargamos del ciclo completo: negociación y compra a editoriales, recepción en almacén, empaquetado personalizado por alumno y entrega directa. <strong>Cero inversión de tiempo</strong> por parte de la secretaría del colegio.</p>
+                    <h3 style={{ margin: '0 0 15px 0', fontSize: 18 }}>💻 Tu propia Tienda Online</h3>
+                    <p style={{ margin: 0, color: C.slate, fontSize: 14, lineHeight: 1.6 }}>Creamos un e-commerce totalmente gratuito y personalizado a tu nombre. Vende libros, licencias, uniformes y material abriendo una nueva línea de negocio a coste cero.</p>
                   </div>
                   <div style={{ padding: 30, background: '#fff', borderRadius: 16, borderTop: `5px solid ${C.teal}`, boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
-                    <h3 style={{ margin: '0 0 15px 0', fontSize: 20 }}>💬 Atención a Familias 360º</h3>
-                    <p style={{ margin: 0, color: C.slate, fontSize: 15, lineHeight: 1.6 }}>Nuestro equipo de atención al cliente asume todas las incidencias, devoluciones, cambios de grupo y dudas de los padres durante todo el proceso de compra y curso escolar.</p>
+                    <h3 style={{ margin: '0 0 15px 0', fontSize: 18 }}>📦 Logística 100% Gestionada</h3>
+                    <p style={{ margin: 0, color: C.slate, fontSize: 14, lineHeight: 1.6 }}>Asumimos toda la relación con editoriales: pedidos, almacenamiento, preparación individualizada y entrega a domicilio. El centro no invierte ni un minuto.</p>
                   </div>
                   <div style={{ padding: 30, background: '#fff', borderRadius: 16, borderTop: `5px solid ${C.gold}`, boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
-                    <h3 style={{ margin: '0 0 15px 0', fontSize: 20 }}>📈 Transparencia Financiera</h3>
-                    <p style={{ margin: 0, color: C.slate, fontSize: 15, lineHeight: 1.6 }}>Si las condiciones comerciales previamente negociadas por el colegio con la editorial son mejores que las de nuestra central de compras, respetamos tu margen devolviendo esa diferencia de forma íntegra (Rappel).</p>
+                    <h3 style={{ margin: '0 0 15px 0', fontSize: 18 }}>💬 Atención a Familias 360º</h3>
+                    <p style={{ margin: 0, color: C.slate, fontSize: 14, lineHeight: 1.6 }}>Contamos con un equipo dedicado y especialista para resolver dudas, incidencias y devoluciones. Liberamos por completo a la secretaría del estrés de campaña.</p>
                   </div>
                   <div style={{ padding: 30, background: '#fff', borderRadius: 16, borderTop: `5px solid ${C.coral}`, boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
-                    <h3 style={{ margin: '0 0 15px 0', fontSize: 20 }}>💻 Plataforma Web Personalizada</h3>
-                    <p style={{ margin: 0, color: C.slate, fontSize: 15, lineHeight: 1.6 }}>Desplegamos una tienda online con el logo y colores del colegio. Las familias encuentran sus listados de libros precargados por curso, garantizando un proceso de pago rápido y seguro.</p>
+                    <h3 style={{ margin: '0 0 15px 0', fontSize: 18 }}>🔗 Hub de Licencias Digitales</h3>
+                    <p style={{ margin: 0, color: C.slate, fontSize: 14, lineHeight: 1.6 }}>Activación automática de todos los libros digitales a través de nuestro Hub. Proceso simple, seguro e integrable con Google Classroom o Microsoft Teams.</p>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* 2. PESTAÑA RESUMEN */}
+            {/* 2. PESTAÑA RESUMEN (Ahora el colegio ve todos los datos correctos) */}
             {tab === 'resumen' && (
               <div>
-                {/* KPIs Superiores */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15, marginBottom: 25 }}>
-                  <KPI label="Facturación" value={fmt(calc.tv)} sub={`De ${calc.totalAlumnos} alumnos`} icon="💰" />
-                  {isC && <KPI label="Total Costes" value={fmt(calc.tcc + calc.totalCostOp)} sub={`Material: ${fmt(calc.tcc)} | Op: ${fmt(calc.totalCostOp)}`} icon="📉" color={C.slate} />}
-                  {isC && <KPI label="Beneficio Tienda" value={fmt(calc.comision)} sub="Neto Scholarum" icon="📈" />}
-                  {isC && <KPI label="Beneficio Colegio" value={fmt(calc.benColegio)} sub="Comisión + Rappel" icon="🏫" accent />}
+                  <KPI label="Facturación Estimada" value={fmt(calc.tv)} sub={`De ${calc.totalAlumnos} alumnos`} icon="💰" />
+                  
+                  {/* Estos dos ahora SÍ los ve el colegio */}
+                  <KPI label="Total Costes" value={fmt(calc.tcc + calc.totalCostOp)} sub={`Material: ${fmt(calc.tcc)} | Op: ${fmt(calc.totalCostOp)}`} icon="📉" color={C.slate} />
+                  <KPI label="Beneficio Colegio" value={fmt(calc.benColegio)} sub="Comisión + Rappel" icon="🏫" accent />
+                  
+                  {/* Este solo lo ve el comercial */}
+                  {isC && <KPI label="Beneficio Tienda" value={fmt(calc.comision)} sub="Neto Deliber" icon="📈" />}
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20 }}>
@@ -395,6 +443,7 @@ export default function App() {
                     </ResponsiveContainer>
                   </div>
                 </div>
+                <p style={{ fontSize: 12, color: C.slate, fontStyle: 'italic', textAlign: 'center' }}>* Datos aproximados. Sujeto a variaciones finales de compra y actualización de tarifas anuales.</p>
               </div>
             )}
 
@@ -493,7 +542,7 @@ export default function App() {
 
 function KPI({ label, value, sub, icon, accent, color }) {
   return (
-    <div style={{ background: accent ? `linear-gradient(135deg, ${C.teal}, ${C.blue})` : C.card, padding: '25px', borderRadius: 16, boxShadow: '0 8px 20px rgba(0,0,0,0.04)', color: accent ? '#fff' : (color || C.ink), border: accent ? 'none' : `1px solid ${C.muted}` }}>
+    <div style={{ background: accent ? `linear-gradient(135deg, ${C.teal}, ${C.blue})` : C.card, padding: '25px', borderRadius: 16, boxShadow: '0 8px 20px rgba(0,0,0,0.04)', color: accent ? '#fff' : (color || C.ink), border: accent ? 'none' : `1px solid ${C.muted}`, position: 'relative', overflow: 'hidden' }}>
       <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>{icon && <span style={{fontSize: 18}}>{icon}</span>} {label}</div>
       <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.5px' }}>{value}</div>
       {sub && <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6, fontWeight: 500 }}>{sub}</div>}
