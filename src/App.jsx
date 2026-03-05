@@ -11,7 +11,6 @@ const BRAND = {
   card: "#ffffff"        
 };
 
-// PON TU API KEY AQUÍ
 const API = "https://script.google.com/macros/s/AKfycbwCYoLIusztmA7AXeEx8HnVprZoQJFMW-vIslvmgFNdvzt_NoY5d8w9nNOLP2btQ0b0/exec";
 
 const C = {
@@ -23,8 +22,7 @@ const C = {
 
 const fmt = n => n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 const fPct = n => (n * 100).toFixed(1) + '%';
-const fN = n => Math.round(n).toLocaleString('es-ES');
-const sh = p => (p || '').replace(/Comercial (de ediciones |Grupo )/g, '').replace(/ S\.A\.U?\./g, '').replace(/ SL$/,'').replace(/ S\.L\.U?\./g,'').replace(/Ediciones /,'').replace(/Editorial /,'').replace('MacMillan Iberia','MacMillan');
+const sh = p => (p || '').replace(/Comercial (de ediciones |Grupo )/g, '').replace(/ S\.A\.U?\./g, '').replace(/ SL$/,'').replace(/ S\.L\.U?\./g,'').replace(/Ediciones /,'').replace(/Editorial /,'');
 
 // ── SMART PARSER ──
 function parseInput(text) {
@@ -52,16 +50,14 @@ function parseInput(text) {
   return entries;
 }
 
-// ── API CALL (FIXED: GET para leer, POST para guardar datos largos) ──
+// ── API CALL (GET normal, POST para guardar sin romper CORS) ──
 async function apiCall(action, params = {}) {
   if (action === 'guardar') {
-    // Usamos POST con text/plain para evitar que la URL explote por tamaño y saltarnos el CORS block
     const r = await fetch(API, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action, ...params })
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // Truco para saltar el bloqueo de CORS
+      body: JSON.stringify({ action, data: params.data })
     });
-    if (!r.ok) throw new Error(`Error servidor HTTP ${r.status}`);
     return r.json();
   } else {
     const url = new URL(API);
@@ -69,8 +65,7 @@ async function apiCall(action, params = {}) {
     for (const [k, v] of Object.entries(params)) {
       url.searchParams.set(k, typeof v === 'object' ? JSON.stringify(v) : v);
     }
-    const r = await fetch(url.toString(), { redirect: 'follow' });
-    if (!r.ok) throw new Error(`Error servidor HTTP ${r.status}`);
+    const r = await fetch(url.toString());
     return r.json();
   }
 }
@@ -92,6 +87,13 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const fileRef = useRef(null);
+
+  const isC = viewMode === 'comercial';
+
+  // Forzar cambio de pestaña si "Comercial" está activo
+  useEffect(() => {
+    if (isC && tab === 'propuesta') setTab('resumen');
+  }, [isC, tab]);
 
   // Carga inicial por URL
   useEffect(() => {
@@ -122,10 +124,25 @@ export default function App() {
       const isbnStr = entries.map(e => `${e.isbn}:${e.alumnos}`).join(',');
       const r = await apiCall('cruzar', { isbns: isbnStr });
       if (r.error) throw new Error(r.error);
+      
       setData(r); setEditableData(r);
+      
+      // SOLUCIÓN RAPPEL: Calculamos la media real de tus descuentos desde los libros encontrados
       const dtos = {};
-      (r.proveedores || []).forEach(p => { dtos[p.proveedor] = { scho: p.dtoScho, col: p.dtoColegio }; });
-      setColDtos(dtos); setStep(2);
+      r.found.forEach(b => {
+        const prov = b.proveedor || 'Sin proveedor';
+        if (!dtos[prov]) dtos[prov] = { sum: 0, count: 0 };
+        dtos[prov].sum += (b.dto || 0);
+        dtos[prov].count += 1;
+      });
+      
+      const finalDtos = {};
+      Object.keys(dtos).forEach(prov => {
+        const avg = Math.round(dtos[prov].sum / dtos[prov].count);
+        finalDtos[prov] = { scho: avg, col: avg }; // Igualamos para que el Rappel inicial sea siempre 0
+      });
+      
+      setColDtos(finalDtos); setStep(2); setTab('resumen');
     } catch (e) { setError(e.message); setStep(0); }
     finally { setLoading(false); }
   }, [inputText]);
@@ -136,12 +153,13 @@ export default function App() {
       const saveData = { nombre: nombre || 'Sin nombre', costeOp: costePapel, costeOpDigital: costeDigital, condiciones: colDtos, datos: editableData };
       const r = await apiCall('guardar', { data: saveData });
       if (r.error) throw new Error(r.error);
-      setShareUrl(`${window.location.origin}${window.location.pathname}?id=${r.id}&modo=colegio`);
+      const url = `${window.location.origin}${window.location.pathname}?id=${r.id}&modo=colegio`;
+      setShareUrl(url);
+      alert('¡Enlace guardado con éxito!');
     } catch (e) { alert('Error: ' + e.message); }
     finally { setSaving(false); }
   }, [editableData, nombre, costePapel, costeDigital, colDtos]);
 
-  // RESTAURADA: Función para modificar alumnos
   const updateAlumnos = useCallback((isbn, val) => {
     const newAlumnos = parseInt(val) || 0;
     setEditableData(prev => {
@@ -150,7 +168,6 @@ export default function App() {
     });
   }, []);
 
-  // RESTAURADA: Función para archivo CSV/TXT
   const handleFile = useCallback(e => {
     const f = e.target.files[0]; if (!f) return;
     const r = new FileReader();
@@ -199,17 +216,18 @@ export default function App() {
       ...p, m: p.tv - p.tcs, rap: p.tcs - p.tcc, ben: (p.tv - p.tcs - p.costOp) + (p.tcs - p.tcc)
     })).sort((a,b) => b.tv - a.tv);
 
-    return { rows, prov, tv, tcs, tcc, totalCostOp, comision, rap, benColegio, t: rows.length };
+    const totalAlumnos = rows.reduce((s, r) => s + (r.alumnos || 0), 0);
+
+    return { rows, prov, tv, tcs, tcc, totalCostOp, comision, rap, benColegio, t: rows.length, totalAlumnos };
   }, [editableData, colDtos, costePapel, costeDigital]);
 
-  const isC = viewMode === 'comercial';
   const filtered = calc?.rows.filter(r => !search || r.titulo?.toLowerCase().includes(search.toLowerCase()) || r.isbn?.includes(search)) || [];
 
   const sty = {
     card: { background: C.card, borderRadius: 14, padding: 24, boxShadow: '0 4px 15px rgba(0,0,0,0.03)', border: `1px solid ${C.muted}` },
     input: { padding: '10px 14px', borderRadius: 8, border: `1.5px solid ${C.muted}`, fontSize: 14, width: '100%', boxSizing: 'border-box' },
     btn: { padding: '12px 24px', borderRadius: 8, background: C.blue, color: '#fff', fontWeight: 600, border: 'none', cursor: 'pointer' },
-    btn2: { padding: '10px 20px', borderRadius: 8, border: `2px solid ${C.blue}`, background: 'transparent', color: C.blue, cursor: 'pointer', fontWeight: 600 }
+    btn2: { padding: '10px 20px', borderRadius: 8, border: `2px dashed ${C.blue}`, background: 'transparent', color: C.blue, cursor: 'pointer', fontWeight: 600 }
   };
 
   return (
@@ -234,7 +252,7 @@ export default function App() {
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '30px 20px' }}>
         
-        {/* PASO 0: INPUT Y CSV (RESTAURADO) */}
+        {/* PASO 0: INPUT Y CSV */}
         {step === 0 && (
           <div style={sty.card}>
             <h2 style={{ marginTop: 0, fontSize: 20 }}>Nuevo simulacro</h2>
@@ -263,10 +281,10 @@ export default function App() {
           </div>
         )}
 
-        {/* PASO 1: LOADING (RESTAURADO) */}
+        {/* PASO 1: LOADING */}
         {step === 1 && (
           <div style={{ ...sty.card, textAlign: 'center', padding: '80px 20px' }}>
-            <div style={{ fontSize: 50, marginBottom: 20, animation: 'pulse 1.5s infinite' }}>📚</div>
+            <div style={{ fontSize: 50, marginBottom: 20 }}>📚</div>
             <h2 style={{ color: C.navy, margin: 0 }}>Cruzando con el catálogo...</h2>
             <p style={{ color: C.slate }}>Buscando precios y formatos en tu Master DB.</p>
           </div>
@@ -275,15 +293,31 @@ export default function App() {
         {/* PASO 2 Y 3: DASHBOARD */}
         {(step === 2 || step === 3) && calc && (
           <>
-            {/* Controles Superiores */}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 15 }}>
               <div style={{ display: 'flex', gap: 8 }}>
-                {['propuesta', 'resumen', 'detalle', ...(isC ? ['editoriales'] : [])].map(t => (
+                {!isC && (
+                  <button onClick={() => setTab('propuesta')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: tab === 'propuesta' ? C.blue : C.muted, color: tab === 'propuesta' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer' }}>
+                    Propuesta
+                  </button>
+                )}
+                {['resumen', 'detalle'].map(t => (
                   <button key={t} onClick={() => setTab(t)} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: tab === t ? C.blue : C.muted, color: tab === t ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize' }}>
                     {t}
                   </button>
                 ))}
+                {isC && (
+                  <button onClick={() => setTab('editoriales')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: tab === 'editoriales' ? C.blue : C.muted, color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer' }}>
+                    Editoriales
+                  </button>
+                )}
+                {/* BOTÓN NO ENCONTRADOS (Avisa del desfase de facturación) */}
+                {data?.notFound?.length > 0 && (
+                  <button onClick={() => setTab('notFound')} style={{ padding: '8px 16px', borderRadius: 8, border: `2px solid ${C.coral}`, background: tab === 'notFound' ? C.coral : 'transparent', color: tab === 'notFound' ? '#fff' : C.coral, fontWeight: 700, cursor: 'pointer' }}>
+                    ⚠️ No Encontrados ({data.notFound.length})
+                  </button>
+                )}
               </div>
+              
               {isC && (
                 <div style={{ display: 'flex', gap: 15, alignItems: 'center' }}>
                   <div style={{ background: '#fff', padding: '6px 12px', borderRadius: 8, border: `1px solid ${C.muted}`, fontSize: 12, fontWeight: 600 }}>
@@ -291,7 +325,7 @@ export default function App() {
                     <span style={{ margin: '0 10px', color: C.muted }}>|</span>
                     💻 Digital: <input type="number" value={costeDigital} onChange={e => setCosteDigital(+e.target.value)} style={{ width: 40, border: 'none', outline: 'none', fontWeight: 'bold', color: C.blue }} />%
                   </div>
-                  <button onClick={handleGuardar} style={{ ...sty.btn, background: C.teal, padding: '8px 16px' }}>{saving ? "⏳..." : "💾 Guardar URL"}</button>
+                  <button onClick={handleGuardar} style={{ ...sty.btn, background: C.teal, padding: '8px 16px' }}>{saving ? "⏳ Generando..." : "💾 Guardar URL"}</button>
                   <button onClick={() => window.location.reload()} style={{ ...sty.btn2, padding: '8px 16px' }}>Nuevo</button>
                 </div>
               )}
@@ -299,22 +333,20 @@ export default function App() {
 
             {shareUrl && isC && (
               <div style={{ padding: 15, background: '#e8f5e9', borderRadius: 8, marginBottom: 20, border: '1px solid #c8e6c9', fontSize: 13, display: 'flex', justifyContent: 'space-between' }}>
-                <span><strong>Enlace para el cliente:</strong> <a href={shareUrl} target="_blank" style={{ color: C.green }}>{shareUrl}</a></span>
+                <span><strong>Enlace para el colegio:</strong> <a href={shareUrl} target="_blank" style={{ color: C.green }}>{shareUrl}</a></span>
               </div>
             )}
 
             {/* KPIs */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 15, marginBottom: 25 }}>
-              <KPI label="Facturación" value={fmt(calc.tv)} sub={`${calc.t} títulos`} icon="💰" />
-              {isC && <KPI label="Comisión SCH" value={fmt(calc.comision)} sub="Neto" icon="📈" />}
+              <KPI label="Facturación" value={fmt(calc.tv)} sub="Estimación total" icon="💰" />
+              {isC && <KPI label="Comisión SCH" value={fmt(calc.comision)} sub="Beneficio neto" icon="📈" />}
               {calc.rap > 0 && <KPI label="Rappel Devuelto" value={fmt(calc.rap)} sub="Por mejora de condiciones" icon="🎁" />}
               <KPI label="Beneficio Colegio" value={fmt(calc.benColegio)} sub="Comisión + Rappel" icon="🏫" accent />
             </div>
 
-            {/* TABS */}
-            
-            {/* NUEVA PESTAÑA: PROPUESTA DE VALOR */}
-            {tab === 'propuesta' && (
+            {/* PESTAÑA PROPUESTA (Solo para el colegio) */}
+            {!isC && tab === 'propuesta' && (
               <div style={sty.card}>
                 <h2 style={{ color: C.navy, marginTop: 0, fontSize: 24, textAlign: 'center', marginBottom: 30 }}>¿Por qué externalizar la tienda con {BRAND.name}?</h2>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
@@ -332,40 +364,45 @@ export default function App() {
                   </div>
                   <div style={{ padding: 20, background: '#f8fafc', borderRadius: 12, borderLeft: `4px solid ${C.coral}` }}>
                     <h3 style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: 10 }}>💻 Plataforma Propia</h3>
-                    <p style={{ margin: 0, color: C.slate, fontSize: 14, lineHeight: 1.6 }}>Tienda online personalizada con el logo del colegio. Proceso de compra en 3 clics, listados de libros precargados y pasarela de pago segura.</p>
+                    <p style={{ margin: 0, color: C.slate, fontSize: 14, lineHeight: 1.6 }}>Tienda online personalizada con el logo del colegio. Proceso de compra rápido y pasarela de pago segura.</p>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* TAB: RESUMEN (Gráficos) */}
+            {/* TAB: RESUMEN (Añadido Totales de Libros y Alumnos) */}
             {tab === 'resumen' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20 }}>
-                <div style={sty.card}>
-                  <h3 style={{ marginTop: 0 }}>Ventas por Proveedor</h3>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={calc.prov.map(p => ({ name: sh(p.p), Venta: Math.round(p.tv) }))} layout="vertical" margin={{ left: 10 }}>
-                      <XAxis type="number" hide />
-                      <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={v => fmt(v)} />
-                      <Bar dataKey="Venta" fill={C.blue} radius={[0, 4, 4, 0]} barSize={15} />
-                    </BarChart>
-                  </ResponsiveContainer>
+              <div>
+                <div style={{ display: 'flex', gap: 15, marginBottom: 20 }}>
+                  <div style={{ background: '#e3f2fd', padding: '10px 20px', borderRadius: 8, color: C.blue, fontWeight: 700 }}>📚 Total Títulos: {calc.t}</div>
+                  <div style={{ background: '#e3f2fd', padding: '10px 20px', borderRadius: 8, color: C.blue, fontWeight: 700 }}>🎓 Total Alumnos: {calc.totalAlumnos}</div>
                 </div>
-                <div style={sty.card}>
-                  <h3 style={{ marginTop: 0 }}>Distribución</h3>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie data={calc.prov.map((p,i) => ({ name: sh(p.p), value: Math.round(p.tv), fill: C.ch[i%C.ch.length] }))} dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={80}>
-                      </Pie>
-                      <Tooltip formatter={v => fmt(v)} />
-                    </PieChart>
-                  </ResponsiveContainer>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20 }}>
+                  <div style={sty.card}>
+                    <h3 style={{ marginTop: 0 }}>Ventas por Proveedor</h3>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <BarChart data={calc.prov.map(p => ({ name: sh(p.p), Venta: Math.round(p.tv) }))} layout="vertical" margin={{ left: 10 }}>
+                        <XAxis type="number" hide />
+                        <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={v => fmt(v)} />
+                        <Bar dataKey="Venta" fill={C.blue} radius={[0, 4, 4, 0]} barSize={15} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div style={sty.card}>
+                    <h3 style={{ marginTop: 0 }}>Distribución</h3>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                        <Pie data={calc.prov.map((p,i) => ({ name: sh(p.p), value: Math.round(p.tv), fill: C.ch[i%C.ch.length] }))} dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={80} />
+                        <Tooltip formatter={v => fmt(v)} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* TAB: DETALLE (RESTAURADA EDICIÓN Y BUSCADOR) */}
+            {/* TAB: DETALLE (Restaurada) */}
             {tab === 'detalle' && (
               <div style={sty.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 15 }}>
@@ -392,7 +429,6 @@ export default function App() {
                           <td style={{ padding: 10 }}>{r.isPapel ? '📄' : '💻'}</td>
                           <td style={{ padding: 10 }}>{r.pvp?.toFixed(2)}€</td>
                           <td style={{ padding: 10, textAlign: 'center' }}>
-                            {/* RESTAURADO: Input editable para cambiar número de alumnos */}
                             <input 
                               type="number" 
                               value={r.alumnos} 
@@ -410,7 +446,7 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB: EDITORIALES (Para ajustar descuentos) */}
+            {/* TAB: EDITORIALES */}
             {tab === 'editoriales' && isC && (
               <div style={sty.card}>
                 <h3 style={{ marginTop: 0 }}>Descuentos por Editorial</h3>
@@ -443,6 +479,24 @@ export default function App() {
               </div>
             )}
 
+            {/* TAB: NO ENCONTRADOS */}
+            {tab === 'notFound' && data?.notFound && (
+              <div style={{ ...sty.card, border: `2px solid ${C.coral}` }}>
+                <h3 style={{ marginTop: 0, color: C.coral }}>⚠️ Atención: {data.notFound.length} ISBNs no encontrados</h3>
+                <p style={{ color: C.slate, fontSize: 13 }}>
+                  Estos libros estaban en la lista del colegio pero no aparecen en la pestaña "Master DB". 
+                  Esta es la razón de que falte facturación. Añádelos al Excel y vuelve a cruzar.
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 15 }}>
+                  {data.notFound.map((isbn, i) => (
+                    <span key={i} style={{ padding: '8px 12px', background: '#fef2f0', borderRadius: 8, fontFamily: 'monospace', fontSize: 13, fontWeight: 'bold', color: C.coral }}>
+                      {isbn}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
           </>
         )}
       </div>
@@ -450,7 +504,6 @@ export default function App() {
   );
 }
 
-// Componente para pintar KPIs bonitos
 function KPI({ label, value, sub, icon, accent }) {
   return (
     <div style={{ 
