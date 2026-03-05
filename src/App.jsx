@@ -46,31 +46,16 @@ function parseInput(text) {
   return entries;
 }
 
-// ── API CALL with Apps Script redirect handling ──
-async function apiCall(action, body) {
-  try {
-    if (body) {
-      // POST: Apps Script needs text/plain to avoid CORS preflight
-      const r = await fetch(`${API}?action=${action}`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-        headers: { 'Content-Type': 'text/plain' },
-      });
-      return r.json();
-    } else {
-      const r = await fetch(`${API}?action=${action}`);
-      return r.json();
-    }
-  } catch (e) {
-    // If CORS fails, try GET with data in URL param (fallback)
-    if (body && action === 'cruzar') {
-      // For cruzar, encode ISBNs as compact GET param
-      const isbnList = body.isbns.map(i => `${i.isbn}:${i.alumnos}`).join(',');
-      const r = await fetch(`${API}?action=cruzar_get&isbns=${encodeURIComponent(isbnList)}`);
-      return r.json();
-    }
-    throw e;
+// ── API CALL: all via GET to avoid CORS issues with Apps Script ──
+async function apiCall(action, params = {}) {
+  const url = new URL(API);
+  url.searchParams.set('action', action);
+  for (const [k, v] of Object.entries(params)) {
+    url.searchParams.set(k, typeof v === 'object' ? encodeURIComponent(JSON.stringify(v)) : v);
   }
+  const r = await fetch(url.toString());
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
 }
 
 export default function App() {
@@ -123,7 +108,9 @@ export default function App() {
     if (!entries.length) { setError('No se detectaron ISBNs válidos (deben empezar por 978 o 979, 13 dígitos)'); return; }
     setLoading(true); setError(''); setStep(1);
     try {
-      const r = await apiCall('cruzar', { isbns: entries });
+      // Encode as compact string: "isbn:alumnos,isbn:alumnos,..."
+      const isbnStr = entries.map(e => `${e.isbn}:${e.alumnos}`).join(',');
+      const r = await apiCall('cruzar', { isbns: isbnStr });
       if (r.error) throw new Error(r.error);
       setData(r);
       const dtos = {};
@@ -137,10 +124,11 @@ export default function App() {
   const handleGuardar = useCallback(async () => {
     if (!data) return; setSaving(true);
     try {
-      const r = await apiCall('guardar', {
+      const saveData = {
         nombre: nombre || 'Sin nombre', costeOp: costePapel, costeOpDigital: costeDigital,
         condiciones: colDtos, datos: data,
-      });
+      };
+      const r = await apiCall('guardar', { data: saveData });
       if (r.error) throw new Error(r.error);
       const base = window.location.origin + window.location.pathname;
       const url = `${base}?id=${r.id}&modo=colegio`;
