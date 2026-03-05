@@ -46,14 +46,21 @@ function parseInput(text) {
   return entries;
 }
 
-// ── API CALL: all via GET to avoid CORS issues with Apps Script ──
+// ── CORRECCIÓN DE API CALL ──
 async function apiCall(action, params = {}) {
   const url = new URL(API);
   url.searchParams.set('action', action);
   for (const [k, v] of Object.entries(params)) {
-    url.searchParams.set(k, typeof v === 'object' ? encodeURIComponent(JSON.stringify(v)) : v);
+    // ELIMINADO: encodeURIComponent (URLSearchParams ya lo hace solo)
+    url.searchParams.set(k, typeof v === 'object' ? JSON.stringify(v) : v);
   }
-  const r = await fetch(url.toString());
+  
+  // Añadimos modo 'cors' explícito
+  const r = await fetch(url.toString(), {
+    method: 'GET',
+    mode: 'cors',
+  });
+  
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
