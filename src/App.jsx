@@ -7,7 +7,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 const BRAND = {
   name: "DELIBER",
   companyLogo: "https://www.scholarum.es/wp-content/uploads/footer/logo-deliber.svg", 
-  favicon: "https://somosdeliber.com/wp-content/uploads/favicon-1.png", // Favicon añadido
+  favicon: "https://somosdeliber.com/wp-content/uploads/favicon-1.png",
   primary: "#1b6b93",    
   secondary: "#00897b",  
   accent: "#e5a100",     
@@ -36,11 +36,7 @@ const sh = p => (p || '').replace(/Comercial (de ediciones |Grupo )/g, '').repla
 function setFavicon() {
   document.title = `${BRAND.name} Educación | Propuestas`;
   let link = document.querySelector("link[rel~='icon']");
-  if (!link) {
-    link = document.createElement('link');
-    link.rel = 'icon';
-    document.head.appendChild(link);
-  }
+  if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
   link.href = BRAND.favicon;
 }
 
@@ -82,6 +78,14 @@ async function apiCall(action, params = {}) {
   }
 }
 
+// Generador de PIN Alfanumérico (6 caracteres)
+function generatePIN() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Quitamos O,0,1,I para evitar confusiones
+  let pin = '';
+  for (let i = 0; i < 6; i++) pin += chars.charAt(Math.floor(Math.random() * chars.length));
+  return pin;
+}
+
 export default function App() {
   const [step, setStep] = useState(0); 
   const [loadingMsg, setLoadingMsg] = useState('Cargando...');
@@ -89,8 +93,7 @@ export default function App() {
   const [nombre, setNombre] = useState('');
   const [responsable, setResponsable] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
-  // Generamos PIN aleatorio por defecto
-  const [pin, setPin] = useState(() => Math.floor(1000 + Math.random() * 9000).toString()); 
+  const [pin, setPin] = useState(''); // Se generará al cruzar los datos
   const [pinInput, setPinInput] = useState(''); 
   const [isAuthenticated, setIsAuthenticated] = useState(false); 
   
@@ -106,25 +109,27 @@ export default function App() {
   const [tab, setTab] = useState('resumen');
   const [viewMode, setViewMode] = useState('comercial');
   const [shareUrl, setShareUrl] = useState('');
-  const [commercialUrl, setCommercialUrl] = useState(''); // Nueva URL para editar
+  const [commercialUrl, setCommercialUrl] = useState(''); 
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [webhookSent, setWebhookSent] = useState(false); 
+  const [showMissing, setShowMissing] = useState(false); // Toggle para ver los ISBNs faltantes
   const fileRef = useRef(null);
 
   const isC = viewMode === 'comercial';
-  const notFoundList = editableData?.meta?.notFound || data?.notFound || []; // Lista blindada de ignorados
+  const notFoundList = editableData?.meta?.notFound || data?.notFound || []; 
 
   useEffect(() => { setFavicon(); }, []);
   useEffect(() => { if (isC && tab === 'propuesta') setTab('resumen'); }, [isC, tab]);
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
-    const id = p.get('id'), modo = p.get('modo');
+    const id = p.get('id'), ref = p.get('ref'); // ref=client o ref=admin
+    
     if (id) {
       setLoadingMsg('Verificando acceso seguro...');
       setLoading(true); setStep(1);
-      apiCall('cargar', { id, modo: modo || 'colegio' })
+      apiCall('cargar', { id })
         .then(res => {
           if (res.error) throw new Error(res.error);
           setNombre(res.nombre || '');
@@ -134,28 +139,27 @@ export default function App() {
           setProbabilidad(parseFloat(res.prob) || 100);
           setColDtos(res.condiciones || {});
           
-          // Leer la meta incrustada en datos (A prueba de borrado)
           const meta = res.datos?.meta || {};
           setLogoUrl(meta.logoUrl || '');
           setResponsable(meta.responsable || '');
           if(meta.pin) setPin(meta.pin);
           
-          setViewMode(modo === 'colegio' ? 'colegio' : 'comercial');
-          setTab(modo === 'colegio' ? 'propuesta' : 'resumen'); 
+          const isClient = ref !== 'admin';
+          setViewMode(isClient ? 'colegio' : 'comercial');
+          setTab(isClient ? 'propuesta' : 'resumen'); 
           
-          if (modo === 'colegio') {
-            if (meta.pin) setStep(99);
+          if (isClient) {
+            if (meta.pin) setStep(99); // Pide PIN cliente
             else { setIsAuthenticated(true); setStep(3); }
           } else {
-            // Si es URL comercial, pide PIN maestro
-            setStep(98);
+            setStep(98); // Pide PIN Comercial Maestro
           }
         })
         .catch(e => { setError(e.message); setStep(0); })
         .finally(() => setLoading(false));
     } else {
       setIsAuthenticated(false); 
-      setStep(98); // Pantalla inicial pide PIN comercial
+      setStep(98); 
     }
   }, []);
 
@@ -167,11 +171,11 @@ export default function App() {
         setPinInput('');
       } else alert("PIN Comercial incorrecto.");
     } else if (step === 99) {
-      if (pinInput === pin) {
+      if (pinInput.toUpperCase() === pin.toUpperCase()) {
         setIsAuthenticated(true);
         setStep(3);
         setPinInput('');
-      } else alert("PIN incorrecto. Contacta con tu asesor.");
+      } else alert("Contraseña incorrecta. Contacta con tu asesor.");
     }
   };
 
@@ -179,6 +183,10 @@ export default function App() {
     const entries = parseInput(inputText);
     if (!entries.length) { setError('No se detectaron ISBNs válidos.'); return; }
     
+    // Generar PIN en este momento si no existe
+    const newPin = pin || generatePIN();
+    if(!pin) setPin(newPin);
+
     setLoadingMsg('Cruzando con el catálogo de libros...');
     setLoading(true); setError(''); setStep(1);
     try {
@@ -186,7 +194,6 @@ export default function App() {
       const r = await apiCall('cruzar', { isbns: isbnStr });
       if (r.error) throw new Error(r.error);
       
-      // Guardamos en un objeto seguro los faltantes para que no se pierdan
       const datosCompletos = { ...r, meta: { notFound: r.notFound } };
       setData(datosCompletos); setEditableData(datosCompletos);
       
@@ -203,24 +210,22 @@ export default function App() {
         finalDtos[prov] = { scho: avg, col: avg };
       });
       setColDtos(finalDtos); setStep(2); setTab('resumen');
-      if(r.notFound && r.notFound.length > 0) setTab('notFound');
 
     } catch (e) { setError(e.message); setStep(0); }
     finally { setLoading(false); }
-  }, [inputText]);
+  }, [inputText, pin]);
 
   const handleGuardar = useCallback(async () => {
     if (!editableData) return; setSaving(true);
     try {
-      // Metemos los datos extra directamente en 'datos' para que el backend no los corte
       const datosSeguros = { ...editableData, meta: { logoUrl, responsable, pin, notFound: notFoundList } };
       const saveData = { nombre, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: colDtos, datos: datosSeguros };
       const r = await apiCall('guardar', { data: saveData });
       if (r.error) throw new Error(r.error);
       
       const base = `${window.location.origin}${window.location.pathname}?id=${r.id}`;
-      setShareUrl(`${base}&modo=colegio`);
-      setCommercialUrl(`${base}&modo=comercial`);
+      setShareUrl(`${base}&ref=client`); // Enlace Cliente Ofuscado
+      setCommercialUrl(`${base}&ref=admin`); // Enlace Admin Ofuscado
     } catch (e) { alert('Error: ' + e.message); }
     finally { setSaving(false); }
   }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable, pin, notFoundList]);
@@ -305,7 +310,6 @@ export default function App() {
     <div style={{ background: C.light, minHeight: '100vh', fontFamily: 'Outfit, sans-serif', color: C.ink, display: 'flex', flexDirection: 'column' }}>
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
       
-      {/* CABECERA CORPORATIVA */}
       <div style={{ background: `linear-gradient(135deg, ${C.navy}, ${C.blue})`, padding: '20px 40px', color: '#fff', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
@@ -330,7 +334,6 @@ export default function App() {
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '30px 20px', flex: 1, width: '100%', boxSizing: 'border-box' }}>
         
-        {/* LOGIN COMERCIAL MAESTRO */}
         {step === 98 && (
           <div style={{ ...sty.card, maxWidth: 450, margin: '80px auto', textAlign: 'center', borderTop: `5px solid ${C.blue}` }}>
             <div style={{ fontSize: 40, marginBottom: 15 }}>🔐</div>
@@ -341,18 +344,16 @@ export default function App() {
           </div>
         )}
 
-        {/* LOGIN CLIENTE FINAL */}
         {step === 99 && (
           <div style={{ ...sty.card, maxWidth: 450, margin: '80px auto', textAlign: 'center', borderTop: `5px solid ${C.teal}` }}>
             <div style={{ fontSize: 40, marginBottom: 15 }}>🔒</div>
             <h2 style={{ color: C.navy, margin: '0 0 10px 0' }}>Propuesta Privada</h2>
-            <p style={{ color: C.slate, fontSize: 14, marginBottom: 25 }}>Por favor, introduce el PIN proporcionado por tu asesor comercial de {BRAND.name}.</p>
-            <input type="password" placeholder="••••" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} style={{ ...sty.input, textAlign: 'center', fontSize: 24, letterSpacing: 8, marginBottom: 20 }} />
+            <p style={{ color: C.slate, fontSize: 14, marginBottom: 25 }}>Por favor, introduce la contraseña proporcionada por tu asesor comercial de {BRAND.name}.</p>
+            <input type="password" placeholder="Ej: A1B2C3" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} style={{ ...sty.input, textAlign: 'center', fontSize: 24, letterSpacing: 5, marginBottom: 20, textTransform: 'uppercase' }} />
             <button onClick={handleLogin} style={{ ...sty.btn, width: '100%', background: C.teal }}>Ver Propuesta</button>
           </div>
         )}
 
-        {/* PASO 0: CREACIÓN DE PROPUESTA */}
         {isAuthenticated && step === 0 && (
           <div style={sty.card}>
             <h2 style={{ marginTop: 0, fontSize: 24, color: C.navy, borderBottom: `2px solid ${C.muted}`, paddingBottom: 15 }}>Crear Nueva Propuesta</h2>
@@ -365,12 +366,6 @@ export default function App() {
               <div>
                 <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Responsable (Opcional)</label>
                 <input style={sty.input} value={responsable} onChange={e => setResponsable(e.target.value)} placeholder="Ej: María García" />
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: C.coral }}>PIN Generado para el Cliente</label>
-                <div style={{ ...sty.input, background: '#fff', border: `1px solid ${C.coral}`, fontWeight: 'bold', color: C.ink, display: 'flex', alignItems: 'center' }}>
-                  {pin} <span style={{fontSize: 12, marginLeft: 'auto', color: C.slate, fontWeight: 400}}>(Auto-generado)</span>
-                </div>
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>URL Logotipo del Colegio (Opcional)</label>
@@ -407,8 +402,35 @@ export default function App() {
 
         {isAuthenticated && (step === 2 || step === 3) && calc && (
           <>
+            {/* PANEL DE ALERTA DE ISBN FALTANTES SIEMPRE VISIBLE PARA EL COMERCIAL */}
+            {isC && notFoundList.length > 0 && (
+              <div style={{ background: '#fef2f0', border: `1px solid ${C.coral}`, borderRadius: 12, padding: '20px 25px', marginBottom: 25 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 15 }}>
+                  <div>
+                    <h3 style={{ margin: '0 0 5px 0', color: C.coral, display: 'flex', alignItems: 'center', gap: 8 }}>⚠️ {notFoundList.length} ISBNs ignorados (No están en catálogo)</h3>
+                    <p style={{ margin: 0, color: C.slate, fontSize: 14 }}>Estos libros no se han incluido en la propuesta. ¿Quieres verlos o avisar a Compras?</p>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={() => setShowMissing(!showMissing)} style={{ ...sty.btn2, borderColor: C.coral, color: C.coral, padding: '8px 15px' }}>
+                      {showMissing ? "Ocultar" : "👀 Ver Listado"}
+                    </button>
+                    <button onClick={handleSendWebhook} disabled={webhookSent} style={{ ...sty.btn, background: webhookSent ? C.green : C.coral, padding: '8px 15px' }}>
+                      {webhookSent ? "✅ Avisado" : "✉️ Enviar a Compras"}
+                    </button>
+                  </div>
+                </div>
+                {showMissing && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 15, background: '#fff', padding: 15, borderRadius: 8 }}>
+                    {notFoundList.map((isbn, i) => (
+                      <span key={i} style={{ padding: '6px 10px', background: '#f4f7fa', borderRadius: 6, fontFamily: 'monospace', fontSize: 13, fontWeight: 'bold', color: C.ink }}>{isbn}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {isC && (
-              <div style={{ background: '#fff', padding: '15px 25px', borderRadius: 12, marginBottom: 20, border: `1px solid ${C.blue}`, display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+              <div style={{ background: '#fff', padding: '20px 25px', borderRadius: 12, marginBottom: 20, border: `1px solid ${C.blue}`, display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: 200 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
                     <span style={{ fontWeight: 700, color: C.blue }}>🎯 Est. Compra (Slider Base)</span>
@@ -422,12 +444,11 @@ export default function App() {
                     <span style={{ margin: '0 10px', color: C.muted }}>|</span>
                     💻 Gasto Digital: <input type="number" value={costeDigital} onChange={e => setCosteDigital(+e.target.value)} style={{ width: 45, border: 'none', background:'transparent', outline: 'none', fontWeight: 'bold', color: C.blue }} />%
                   </div>
-                  <button onClick={handleGuardar} style={{ ...sty.btn, background: C.teal }}>{saving ? "⏳..." : "💾 Guardar Propuesta"}</button>
+                  <button onClick={handleGuardar} style={{ ...sty.btn, background: C.teal }}>{saving ? "⏳ Guardando..." : "💾 Guardar Propuesta"}</button>
                 </div>
               </div>
             )}
 
-            {/* ZONA DE ENLACES PARA EL COMERCIAL */}
             {shareUrl && commercialUrl && isC && (
               <div style={{ padding: 25, background: '#e8f5e9', borderRadius: 12, marginBottom: 25, border: '1px solid #c8e6c9', textAlign: 'center' }}>
                 <strong style={{ color: C.green, fontSize: 18 }}>¡Propuesta guardada con éxito!</strong>
@@ -436,18 +457,17 @@ export default function App() {
                   <div style={{ background: '#fff', padding: 20, borderRadius: 10, border: `1px solid ${C.muted}` }}>
                     <div style={{ fontSize: 12, color: C.slate, fontWeight: 800, textTransform: 'uppercase', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
                       <span>🏫 Enlace para el Cliente</span>
-                      <span style={{ color: C.coral }}>PIN: {pin}</span>
+                      <span style={{ color: C.coral, background: '#fef2f0', padding: '3px 8px', borderRadius: 4 }}>Contraseña: {pin}</span>
                     </div>
                     <a href={shareUrl} target="_blank" rel="noreferrer" style={{ color: C.blue, fontWeight: 'bold', wordBreak: 'break-all', fontSize: 14 }}>{shareUrl}</a>
-                    <p style={{ fontSize: 12, color: C.slate, margin: '10px 0 0' }}>Envía este link junto con el PIN al colegio.</p>
+                    <p style={{ fontSize: 12, color: C.slate, margin: '10px 0 0' }}>Envía este link junto con la contraseña al colegio.</p>
                   </div>
 
                   <div style={{ background: '#fff', padding: 20, borderRadius: 10, border: `1px solid ${C.muted}` }}>
                     <div style={{ fontSize: 12, color: C.slate, fontWeight: 800, textTransform: 'uppercase', marginBottom: 10 }}>📝 Tu enlace Privado (Edición)</div>
                     <a href={commercialUrl} target="_blank" rel="noreferrer" style={{ color: C.teal, fontWeight: 'bold', wordBreak: 'break-all', fontSize: 14 }}>{commercialUrl}</a>
-                    <p style={{ fontSize: 12, color: C.slate, margin: '10px 0 0' }}>Guarda este link para recuperar la propuesta y editarla.</p>
+                    <p style={{ fontSize: 12, color: C.slate, margin: '10px 0 0' }}>Guarda este link. Te pedirá el PIN Maestro para volver a editar.</p>
                   </div>
-
                 </div>
               </div>
             )}
@@ -458,21 +478,19 @@ export default function App() {
                 <button key={t} onClick={() => setTab(t)} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === t ? C.blue : '#fff', color: tab === t ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>{t}</button>
               ))}
               {isC && <button onClick={() => setTab('editoriales')} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'editoriales' ? C.blue : '#fff', color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>Editoriales y Rappel</button>}
-              
-              {/* BOTÓN FALTANTES BLINDADO */}
-              {notFoundList.length > 0 && (
-                <button onClick={() => setTab('notFound')} style={{ padding: '10px 20px', borderRadius: 8, border: `2px solid ${C.coral}`, background: tab === 'notFound' ? C.coral : '#fff', color: tab === 'notFound' ? '#fff' : C.coral, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>⚠️ {notFoundList.length} Faltantes</button>
-              )}
             </div>
 
+            {/* 1. PROPUESTA (NIVEL DIOS - CLIENTE) */}
             {!isC && tab === 'propuesta' && (
               <div style={{ animation: 'fadeIn 0.5s ease-in' }}>
+                
+                {/* 1. HERO Y CONTEXTO */}
                 <div style={{ background: `linear-gradient(135deg, ${C.navy}, ${C.blue})`, borderRadius: 16, padding: '50px 40px', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 30, marginBottom: 30, boxShadow: '0 10px 30px rgba(27, 107, 147, 0.2)' }}>
                   <div style={{ flex: 1, minWidth: 300 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: 2, opacity: 0.8, marginBottom: 10, textTransform: 'uppercase' }}>Propuesta de colaboración</div>
-                    <h2 style={{ margin: '0 0 15px 0', fontSize: 38, lineHeight: 1.2 }}>{nombre} x {BRAND.name}</h2>
-                    {responsable && <p style={{ fontSize: 18, opacity: 0.9, margin: '0 0 15px 0', borderLeft: `3px solid ${C.gold}`, paddingLeft: 10 }}>A la atención de: <strong>{responsable}</strong></p>}
-                    <p style={{ fontSize: 16, opacity: 0.8, maxWidth: 600, margin: 0, lineHeight: 1.6 }}>Simplificamos los procesos para las familias y aumentamos la rentabilidad del colegio. Nosotros nos encargamos de todo.</p>
+                    <h2 style={{ margin: '0 0 15px 0', fontSize: 38, lineHeight: 1.2 }}>Hazlo fácil con {BRAND.name}</h2>
+                    {responsable && <p style={{ fontSize: 18, opacity: 0.9, margin: '0 0 15px 0', borderLeft: `3px solid ${C.gold}`, paddingLeft: 10 }}>A la atención de: <strong>{responsable} ({nombre})</strong></p>}
+                    <p style={{ fontSize: 16, opacity: 0.8, maxWidth: 600, margin: 0, lineHeight: 1.6 }}>Imagina tener una tienda online propia del colegio, desde donde vender todo lo necesario para el curso escolar sin complicaciones. Simplificando los procesos para las familias y aumentando la rentabilidad del colegio.</p>
                   </div>
                   {logoUrl && (
                     <div style={{ background: '#fff', padding: 15, borderRadius: '50%', width: 140, height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
@@ -481,11 +499,15 @@ export default function App() {
                   )}
                 </div>
 
+                {/* 2. CALCULADORA: PROCESO RENTABLE PARA EL COLEGIO */}
+                <h3 style={{ fontSize: 28, color: C.navy, textAlign: 'center', marginTop: 50, marginBottom: 10 }}>Proceso rentable para el colegio</h3>
+                <p style={{ textAlign: 'center', color: C.slate, maxWidth: 800, margin: '0 auto 30px', fontSize: 16 }}>Cada venta en la tienda online se traduce en ingresos para tu centro. Un dinero que podrás invertir en modernizar aulas o mejorar instalaciones.</p>
+                
                 <div style={{ ...sty.card, border: `2px solid ${C.teal}`, position: 'relative' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 30 }}>
                     <div style={{ flex: 1, minWidth: 300 }}>
                       <h3 style={{ marginTop: 0, color: C.teal, display: 'flex', alignItems: 'center', gap: 10, fontSize: 22 }}>🧮 Simulador de Retorno</h3>
-                      <p style={{ color: C.slate, fontSize: 15, lineHeight: 1.5, margin: '10px 0 25px 0' }}>Descubre el retorno económico para tu centro ajustando la estimación de familias que utilizarán la plataforma.</p>
+                      <p style={{ color: C.slate, fontSize: 15, lineHeight: 1.5, margin: '10px 0 25px 0' }}>Descubre tu beneficio ajustando la estimación de familias que utilizarán la plataforma.</p>
                       
                       <div style={{ background: '#f8fafc', padding: '15px 20px', borderRadius: 10 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -506,28 +528,73 @@ export default function App() {
                   </div>
                 </div>
 
-                <h3 style={{ fontSize: 26, color: C.navy, textAlign: 'center', marginTop: 45, marginBottom: 30 }}>¿Por qué externalizar "La Tienda del Cole" con nosotros?</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 25 }}>
+                {/* 3. NOS ENCARGAMOS DE TODO */}
+                <h3 style={{ fontSize: 28, color: C.navy, textAlign: 'center', marginTop: 60, marginBottom: 10 }}>Nosotros nos encargamos de todo</h3>
+                <p style={{ textAlign: 'center', color: C.slate, maxWidth: 800, margin: '0 auto 40px', fontSize: 16 }}>Tendrás a un especialista que guía al colegio y un equipo de atención al cliente para las familias. Vende libros, licencias, material, uniformes y más.</p>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 25, marginBottom: 50 }}>
                   <div style={{ padding: 30, background: '#fff', borderRadius: 16, borderTop: `5px solid ${C.blue}`, boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
-                    <h3 style={{ margin: '0 0 15px 0', fontSize: 18 }}>💻 Tu propia Tienda Online</h3>
-                    <p style={{ margin: 0, color: C.slate, fontSize: 14, lineHeight: 1.6 }}>Creamos un e-commerce totalmente gratuito y personalizado a tu nombre. Vende libros, licencias y material abriendo una nueva línea de negocio a coste cero.</p>
+                    <div style={{ fontSize: 30, marginBottom: 10 }}>💻</div>
+                    <h3 style={{ margin: '0 0 10px 0', fontSize: 18 }}>Plataforma Adaptable</h3>
+                    <p style={{ margin: 0, color: C.slate, fontSize: 14, lineHeight: 1.6 }}>Nuestra plataforma se adapta a cualquier producto. Desde libros hasta la agenda escolar o papeletas para sorteos.</p>
                   </div>
                   <div style={{ padding: 30, background: '#fff', borderRadius: 16, borderTop: `5px solid ${C.teal}`, boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
-                    <h3 style={{ margin: '0 0 15px 0', fontSize: 18 }}>📦 Logística 100% Gestionada</h3>
-                    <p style={{ margin: 0, color: C.slate, fontSize: 14, lineHeight: 1.6 }}>Asumimos toda la relación con editoriales: pedidos, almacenamiento, preparación individualizada y entrega a domicilio. El centro no invierte ni un minuto.</p>
+                    <div style={{ fontSize: 30, marginBottom: 10 }}>📦</div>
+                    <h3 style={{ margin: '0 0 10px 0', fontSize: 18 }}>Logística 100%</h3>
+                    <p style={{ margin: 0, color: C.slate, fontSize: 14, lineHeight: 1.6 }}>Asumimos pedidos, almacenamiento, preparación y entrega. El centro no invierte ni un minuto.</p>
                   </div>
                   <div style={{ padding: 30, background: '#fff', borderRadius: 16, borderTop: `5px solid ${C.gold}`, boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
-                    <h3 style={{ margin: '0 0 15px 0', fontSize: 18 }}>💬 Atención a Familias 360º</h3>
-                    <p style={{ margin: 0, color: C.slate, fontSize: 14, lineHeight: 1.6 }}>Contamos con un equipo dedicado y especialista para resolver dudas, incidencias y devoluciones. Liberamos por completo a la secretaría del estrés de campaña.</p>
-                  </div>
-                  <div style={{ padding: 30, background: '#fff', borderRadius: 16, borderTop: `5px solid ${C.coral}`, boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
-                    <h3 style={{ margin: '0 0 15px 0', fontSize: 18 }}>🔗 Hub de Licencias Digitales</h3>
-                    <p style={{ margin: 0, color: C.slate, fontSize: 14, lineHeight: 1.6 }}>Activación automática de todos los libros digitales a través de nuestro Hub. Proceso simple, seguro e integrable con Google Classroom o Microsoft Teams.</p>
+                    <div style={{ fontSize: 30, marginBottom: 10 }}>💬</div>
+                    <h3 style={{ margin: '0 0 10px 0', fontSize: 18 }}>Atención a Familias</h3>
+                    <p style={{ margin: 0, color: C.slate, fontSize: 14, lineHeight: 1.6 }}>Resolvemos dudas, incidencias y devoluciones. Liberamos a la secretaría del estrés de campaña.</p>
                   </div>
                 </div>
+
+                {/* 4. CÓMO FUNCIONA */}
+                <div style={{ background: '#fff', borderRadius: 16, padding: 40, border: `1px solid ${C.muted}`, marginBottom: 50 }}>
+                  <h3 style={{ fontSize: 24, color: C.navy, marginTop: 0, marginBottom: 30, textAlign: 'center' }}>¿Cómo funciona para el colegio?</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    {[
+                      "Tras contactar con nosotros, os pediremos el listado de ISBN y resto de productos a incluir.",
+                      "Elegís un dominio acorde al centro y nosotros nos encargamos de ponerlo todo en marcha, a tu nombre y con tus contenidos.",
+                      "Después, debéis comunicar a las familias que pueden comprar desde la nueva web. ¡No tenéis que hacer más!",
+                      "Asumimos toda la logística con las editoriales: pedidos, almacenamiento, entrega o devolución.",
+                      "Nos encargamos de toda la atención al cliente para que no os preocupéis de seguimientos o incidencias."
+                    ].map((text, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 20, alignItems: 'center', background: '#f8fafc', padding: 20, borderRadius: 10 }}>
+                        <div style={{ background: C.blue, color: '#fff', width: 40, height: 40, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 18, flexShrink: 0 }}>{i+1}</div>
+                        <div style={{ color: C.ink, fontSize: 15, lineHeight: 1.5 }}>{text}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 5. PROCESO SENCILLO FAMILIAS */}
+                <div style={{ background: `linear-gradient(135deg, ${C.teal}10, ${C.blue}10)`, borderRadius: 16, padding: 40, border: `1px solid ${C.teal}33` }}>
+                  <h3 style={{ fontSize: 24, color: C.teal, marginTop: 0, marginBottom: 30, textAlign: 'center' }}>Un proceso sencillo para las familias</h3>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 20, textAlign: 'center', marginBottom: 40 }}>
+                    <div><div style={{ fontSize: 35, marginBottom: 10 }}>🏫</div><div style={{ fontWeight: 600, color: C.navy }}>1. Centro define material</div></div>
+                    <div><div style={{ fontSize: 35, marginBottom: 10 }}>🛒</div><div style={{ fontWeight: 600, color: C.navy }}>2. Familias entran a la web</div></div>
+                    <div><div style={{ fontSize: 35, marginBottom: 10 }}>💳</div><div style={{ fontWeight: 600, color: C.navy }}>3. Pedido con facilidades</div></div>
+                    <div><div style={{ fontSize: 35, marginBottom: 10 }}>🚚</div><div style={{ fontWeight: 600, color: C.navy }}>4. Reciben en casa</div></div>
+                  </div>
+
+                  <div style={{ background: '#fff', padding: 25, borderRadius: 12, boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
+                    <h4 style={{ margin: '0 0 15px 0', color: C.navy, fontSize: 18 }}>Facilitamos la vida a las familias</h4>
+                    <ul style={{ margin: 0, paddingLeft: 20, color: C.slate, fontSize: 15, lineHeight: 1.8 }}>
+                      <li><strong>Facilidades de pago</strong> para no hacer esfuerzos económicos al inicio de curso.</li>
+                      <li><strong>Evitamos errores:</strong> la lista aparece exacta según el año y curso del colegio.</li>
+                      <li><strong>Licencias digitales cubiertas:</strong> se asocian directamente al correo del alumno sin configurar nada.</li>
+                      <li><strong>Facturación simple:</strong> facturamos a las familias, y a nosotros nos facturan las editoriales.</li>
+                    </ul>
+                  </div>
+                </div>
+
               </div>
             )}
 
+            {/* 2. RESUMEN */}
             {tab === 'resumen' && (
               <div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15, marginBottom: 25 }}>
@@ -559,10 +626,10 @@ export default function App() {
                     </ResponsiveContainer>
                   </div>
                 </div>
-                <p style={{ fontSize: 12, color: C.slate, fontStyle: 'italic', textAlign: 'center' }}>* Datos aproximados. Sujeto a variaciones finales de compra y actualización de tarifas anuales.</p>
               </div>
             )}
 
+            {/* 3. DETALLE */}
             {tab === 'detalle' && (
               <div style={sty.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -602,6 +669,7 @@ export default function App() {
               </div>
             )}
 
+            {/* 4. EDITORIALES (Solo Comercial) */}
             {tab === 'editoriales' && isC && (
               <div style={sty.card}>
                 <h3 style={{ marginTop: 0 }}>Descuentos y Rappel por Editorial</h3>
@@ -633,26 +701,6 @@ export default function App() {
                     })}
                   </tbody>
                 </table>
-              </div>
-            )}
-
-            {tab === 'notFound' && notFoundList.length > 0 && (
-              <div style={{ ...sty.card, border: `2px solid ${C.coral}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 20 }}>
-                  <div>
-                    <h3 style={{ marginTop: 0, color: C.coral }}>⚠️ Atención: {notFoundList.length} ISBNs ignorados (No están en catálogo)</h3>
-                    <p style={{ color: C.slate, margin: 0 }}>Avisa a Compras para que los den de alta en la Master DB y después vuelve a cruzar el Excel.</p>
-                  </div>
-                  <button onClick={handleSendWebhook} disabled={webhookSent} style={{ ...sty.btn, background: webhookSent ? C.green : C.ink, display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {webhookSent ? "✅ Enviado a Compras" : "✉️ Avisar a Compras (n8n)"}
-                  </button>
-                </div>
-                
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 25 }}>
-                  {notFoundList.map((isbn, i) => (
-                    <span key={i} style={{ padding: '8px 12px', background: '#fef2f0', borderRadius: 8, fontFamily: 'monospace', fontSize: 13, fontWeight: 'bold', color: C.coral }}>{isbn}</span>
-                  ))}
-                </div>
               </div>
             )}
           </>
