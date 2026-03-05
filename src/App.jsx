@@ -2,28 +2,29 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
 // ════════════════════════════════════════════════════════════════════
-// 1. 🎨 CONFIGURACIÓN DE TU MARCA
+// 1. 🎨 CONFIGURACIÓN DE TU MARCA (Paleta SaaS Moderna)
 // ════════════════════════════════════════════════════════════════════
 const BRAND = {
   name: "DELIBER",
   companyLogo: "https://www.scholarum.es/wp-content/uploads/footer/logo-deliber.svg", 
   favicon: "https://somosdeliber.com/wp-content/uploads/favicon-1.png",
-  primary: "#1b6b93",    
-  secondary: "#00897b",  
-  accent: "#e5a100",     
-  bg: "#f4f7fa",         
+  primary: "#2563eb",    // Azul moderno (Tailwind Blue-600)
+  secondary: "#0d9488",  // Teal vibrante (Tailwind Teal-600)
+  accent: "#f59e0b",     // Ambar para alertas
+  bg: "#f8fafc",         // Gris súper claro (Slate-50) para el fondo
   card: "#ffffff"        
 };
 
 const COMMERCIAL_PIN = "1234"; 
 const API = "https://script.google.com/macros/s/AKfycbwCYoLIusztmA7AXeEx8HnVprZoQJFMW-vIslvmgFNdvzt_NoY5d8w9nNOLP2btQ0b0/exec";
-const N8N_WEBHOOK_URL = ""; 
+const N8N_WEBHOOK_URL = "https://scholarumdigital.app.n8n.cloud/webhook/0c901ba1-fd9e-4a10-91f0-c5b612249163"; // URL de Producción
 
 const C = {
-  ink: '#0c1e30', navy: '#122d47', blue: BRAND.primary, teal: BRAND.secondary, 
-  gold: BRAND.accent, coral: '#d4513d', slate: '#6b7f94', green: '#2a7d3f', 
-  light: BRAND.bg, card: BRAND.card, muted: '#e9ecf1', 
-  ch: [BRAND.primary, BRAND.secondary, BRAND.accent, '#d4513d', '#7b5ea7']
+  ink: '#0f172a', navy: '#1e293b', blue: BRAND.primary, teal: BRAND.secondary, 
+  gold: BRAND.accent, coral: '#ef4444', slate: '#64748b', green: '#10b981', 
+  light: BRAND.bg, card: BRAND.card, muted: '#e2e8f0', 
+  // Paleta de colores para los gráficos de tarta
+  ch: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']
 };
 
 const fmt = n => (parseFloat(n) || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
@@ -82,9 +83,16 @@ function generatePIN() {
 }
 
 export default function App() {
-  const [step, setStep] = useState(0); 
-  const [loadingMsg, setLoadingMsg] = useState('Cargando...');
-  const [loadingSubMsg, setLoadingSubMsg] = useState('');
+  // Inicialización inteligente para evitar el "parpadeo" al cargar una URL compartida
+  const [step, setStep] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('id') ? 1 : 98;
+    }
+    return 98;
+  }); 
+  
+  const [loadingMsg, setLoadingMsg] = useState('Verificando acceso seguro...');
+  const [loadingSubMsg, setLoadingSubMsg] = useState('Por favor, espera unos segundos.');
   
   const [nombre, setNombre] = useState('');
   const [responsable, setResponsable] = useState('');
@@ -123,9 +131,10 @@ export default function App() {
     const id = p.get('id'), ref = p.get('ref'); 
     
     if (id) {
-      setLoadingMsg('No me he quedado tostao...');
-      setLoadingSubMsg('Estoy pensando');
-      setLoading(true); setStep(1);
+      setLoadingMsg('Desempaquetando propuesta...');
+      setLoadingSubMsg('No me he quedado tostao, estoy pensando 🧠');
+      setLoading(true); 
+      // El step ya es 1 gracias a la inicialización perezosa
       apiCall('cargar', { id })
         .then(res => {
           if (res.error) throw new Error(res.error);
@@ -154,9 +163,6 @@ export default function App() {
         })
         .catch(e => { setError(e.message); setStep(0); })
         .finally(() => setLoading(false));
-    } else {
-      setIsAuthenticated(false); 
-      setStep(98); 
     }
   }, []);
 
@@ -183,8 +189,8 @@ export default function App() {
     const newPin = pin || generatePIN();
     if(!pin) setPin(newPin);
 
-    setLoadingMsg('Marta Caballero está haciendo su magia...');
-    setLoadingSubMsg('Cruzando libros con el catálogo');
+    setLoadingMsg('Marta Caballero está haciendo su magia... ✨');
+    setLoadingSubMsg('Cruzando libros con el catálogo maestro');
     setLoading(true); setError(''); setStep(1);
     try {
       const isbnStr = entries.map(e => `${e.isbn}:${e.alumnos}`).join(',');
@@ -296,46 +302,51 @@ export default function App() {
 
   const filtered = calc?.rows.filter(r => !search || r.titulo?.toLowerCase().includes(search.toLowerCase()) || r.isbn?.includes(search)) || [];
 
+  // Estilos base actualizados a SaaS Moderno
   const sty = {
-    card: { background: C.card, borderRadius: 16, padding: 30, boxShadow: '0 8px 30px rgba(0,0,0,0.04)', border: `1px solid ${C.muted}`, marginBottom: 25 },
-    input: { padding: '12px 16px', borderRadius: 8, border: `1.5px solid ${C.muted}`, fontSize: 14, width: '100%', boxSizing: 'border-box' },
-    btn: { padding: '12px 24px', borderRadius: 8, background: C.blue, color: '#fff', fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all 0.3s ease' },
-    btn2: { padding: '10px 20px', borderRadius: 8, border: `2px dashed ${C.blue}`, background: 'transparent', color: C.blue, cursor: 'pointer', fontWeight: 600 }
+    card: { background: C.card, borderRadius: 16, padding: 32, boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05), 0 0 0 1px rgba(15,23,42,0.03)', marginBottom: 25 },
+    input: { padding: '14px 18px', borderRadius: 10, border: `1px solid ${C.muted}`, fontSize: 15, width: '100%', boxSizing: 'border-box', background: '#fff', color: C.ink, transition: 'border-color 0.2s', outline: 'none' },
+    btn: { padding: '12px 24px', borderRadius: 10, background: `linear-gradient(to bottom, ${C.blue}, #1d4ed8)`, color: '#fff', fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all 0.2s ease', boxShadow: '0 4px 6px -1px rgba(37,99,235,0.2)' },
+    btn2: { padding: '12px 24px', borderRadius: 10, border: `1.5px solid ${C.muted}`, background: '#fff', color: C.navy, cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s', boxShadow: '0 1px 2px 0 rgba(0,0,0,0.05)' }
   };
 
   return (
     <div style={{ background: C.light, minHeight: '100vh', fontFamily: 'Outfit, sans-serif', color: C.ink, display: 'flex', flexDirection: 'column' }}>
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        input:focus { border-color: ${C.blue} !important; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+      `}</style>
       
       {/* ─────────────────────────────────────────────────────────
-          HEADER CORPORATIVO MEJORADO
+          HEADER CORPORATIVO SAAS FLOTANTE
           ───────────────────────────────────────────────────────── */}
-      <div style={{ 
-        position: 'sticky', top: 0, zIndex: 100,
-        background: `rgba(27, 107, 147, 0.95)`, 
-        backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
-        padding: '16px 40px', color: '#fff', 
-        boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-        borderBottom: '1px solid rgba(255,255,255,0.1)'
-      }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+      <div style={{ padding: '20px 20px 0 20px', position: 'sticky', top: 0, zIndex: 100 }}>
+        <div style={{ 
+          background: 'rgba(255, 255, 255, 0.85)', 
+          backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+          borderRadius: 20, padding: '12px 30px', maxWidth: 1200, margin: '0 auto',
+          boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05), 0 0 0 1px rgba(15,23,42,0.03)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
             {BRAND.companyLogo ? (
-              // Logo ajustado: Si es un SVG blanco de Deliber, le quitamos el fondo blanco y lo hacemos más grande
-              <img src={BRAND.companyLogo} alt={BRAND.name} style={{ height: 40, objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
+              // Logo con fondo blanco integrado perfectamente en el header blanco
+              <img src={BRAND.companyLogo} alt={BRAND.name} style={{ height: 35, objectFit: 'contain', padding: 2 }} />
             ) : (
-              <div style={{ background: '#fff', color: C.blue, fontWeight: 900, fontSize: 22, padding: '5px 14px', borderRadius: 8 }}>D.</div>
+              <div style={{ background: `linear-gradient(135deg, ${C.blue}, ${C.teal})`, color: '#fff', fontWeight: 900, fontSize: 20, padding: '4px 12px', borderRadius: 8 }}>D.</div>
             )}
-            <div>
-              <div style={{ fontSize: 13, letterSpacing: 3, fontWeight: 700, color: C.gold, textTransform: 'uppercase', marginBottom: 2 }}>LA TIENDA DEL COLE</div>
-              <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{nombre ? `Propuesta: ${nombre}` : "Portal Comercial"}</h1>
+            <div style={{ borderLeft: `1px solid ${C.muted}`, paddingLeft: 15, marginLeft: 5 }}>
+              <div style={{ fontSize: 11, letterSpacing: 1.5, fontWeight: 700, color: C.slate, textTransform: 'uppercase', marginBottom: 2 }}>LA TIENDA DEL COLE</div>
+              <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.navy, letterSpacing: '-0.3px' }}>{nombre ? `Propuesta: ${nombre}` : "Portal B2B"}</h1>
             </div>
           </div>
           
           {isAuthenticated && step >= 2 && step !== 3 && (
-            <div style={{ display: 'flex', background: 'rgba(0,0,0,0.2)', padding: 5, borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
-              <button onClick={() => setViewMode('comercial')} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: isC ? '#fff' : 'transparent', color: isC ? C.blue : '#fff', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', fontSize: 13 }}>🔧 Comercial</button>
-              <button onClick={() => setViewMode('colegio')} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: !isC ? '#fff' : 'transparent', color: !isC ? C.blue : '#fff', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', fontSize: 13 }}>🏫 Vista Cliente</button>
+            <div style={{ display: 'flex', background: '#f1f5f9', padding: 4, borderRadius: 10, border: `1px solid ${C.muted}` }}>
+              <button onClick={() => setViewMode('comercial')} style={{ padding: '6px 14px', border: 'none', borderRadius: 8, background: isC ? '#fff' : 'transparent', color: isC ? C.blue : C.slate, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', fontSize: 13, boxShadow: isC ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>🔧 Comercial</button>
+              <button onClick={() => setViewMode('colegio')} style={{ padding: '6px 14px', border: 'none', borderRadius: 8, background: !isC ? '#fff' : 'transparent', color: !isC ? C.blue : C.slate, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', fontSize: 13, boxShadow: !isC ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>🏫 Vista Cliente</button>
             </div>
           )}
         </div>
@@ -344,97 +355,97 @@ export default function App() {
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 20px', flex: 1, width: '100%', boxSizing: 'border-box' }}>
         
         {step === 98 && (
-          <div style={{ ...sty.card, maxWidth: 450, margin: '80px auto', textAlign: 'center', borderTop: `5px solid ${C.blue}` }}>
+          <div style={{ ...sty.card, maxWidth: 450, margin: '60px auto', textAlign: 'center', borderTop: `4px solid ${C.blue}` }}>
             <div style={{ fontSize: 45, marginBottom: 15 }}>🔐</div>
-            <h2 style={{ color: C.navy, margin: '0 0 10px 0', fontSize: 26 }}>Acceso Empleado</h2>
+            <h2 style={{ color: C.navy, margin: '0 0 10px 0', fontSize: 26, fontWeight: 800 }}>Acceso Empleado</h2>
             <p style={{ color: C.slate, fontSize: 15, marginBottom: 25 }}>Introduce el PIN maestro para gestionar propuestas.</p>
-            <input type="password" placeholder="••••" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} style={{ ...sty.input, textAlign: 'center', fontSize: 26, letterSpacing: 8, marginBottom: 20, padding: '15px' }} />
-            <button onClick={handleLogin} style={{ ...sty.btn, width: '100%', fontSize: 16, padding: '15px' }}>Acceder al Sistema</button>
+            <input type="password" placeholder="••••" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} style={{ ...sty.input, textAlign: 'center', fontSize: 28, letterSpacing: 10, marginBottom: 20, padding: '15px' }} />
+            <button onClick={handleLogin} style={{ ...sty.btn, width: '100%', fontSize: 16, padding: '14px' }}>Acceder al Sistema</button>
           </div>
         )}
 
         {step === 99 && (
-          <div style={{ ...sty.card, maxWidth: 450, margin: '80px auto', textAlign: 'center', borderTop: `5px solid ${C.teal}` }}>
+          <div style={{ ...sty.card, maxWidth: 450, margin: '60px auto', textAlign: 'center', borderTop: `4px solid ${C.teal}` }}>
             <div style={{ fontSize: 45, marginBottom: 15 }}>🔒</div>
-            <h2 style={{ color: C.navy, margin: '0 0 10px 0', fontSize: 26 }}>Propuesta Privada</h2>
+            <h2 style={{ color: C.navy, margin: '0 0 10px 0', fontSize: 26, fontWeight: 800 }}>Propuesta Privada</h2>
             <p style={{ color: C.slate, fontSize: 15, marginBottom: 25 }}>Por favor, introduce la contraseña proporcionada por tu asesor comercial de {BRAND.name}.</p>
-            <input type="password" placeholder="Ej: A1B2C3" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} style={{ ...sty.input, textAlign: 'center', fontSize: 26, letterSpacing: 5, marginBottom: 20, textTransform: 'uppercase', padding: '15px' }} />
-            <button onClick={handleLogin} style={{ ...sty.btn, width: '100%', background: C.teal, fontSize: 16, padding: '15px' }}>Ver Propuesta</button>
+            <input type="password" placeholder="Ej: A1B2C3" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} style={{ ...sty.input, textAlign: 'center', fontSize: 24, letterSpacing: 6, marginBottom: 20, textTransform: 'uppercase', padding: '15px' }} />
+            <button onClick={handleLogin} style={{ ...sty.btn, width: '100%', background: `linear-gradient(to bottom, ${C.teal}, #0f766e)`, boxShadow: '0 4px 6px -1px rgba(13,148,136,0.2)', fontSize: 16, padding: '14px' }}>Ver Propuesta</button>
           </div>
         )}
 
         {isAuthenticated && step === 0 && (
           <div style={{...sty.card, animation: 'fadeIn 0.4s ease-out'}}>
-            <h2 style={{ marginTop: 0, fontSize: 26, color: C.navy, borderBottom: `2px solid ${C.muted}`, paddingBottom: 15 }}>Crear Nueva Propuesta</h2>
+            <h2 style={{ marginTop: 0, fontSize: 24, color: C.navy, borderBottom: `1px solid ${C.muted}`, paddingBottom: 20, fontWeight: 800 }}>Crear Nueva Propuesta</h2>
             
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 20, marginBottom: 25, background: '#f8fafc', padding: 25, borderRadius: 12, border: `1px solid ${C.muted}` }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 20, marginBottom: 30, background: '#f8fafc', padding: 25, borderRadius: 16, border: `1px solid ${C.muted}` }}>
               <div>
-                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Nombre del centro</label>
+                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: C.navy }}>Nombre del centro</label>
                 <input style={sty.input} value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: Colegio Humanitas" />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Responsable (Opcional)</label>
+                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: C.navy }}>Responsable (Opcional)</label>
                 <input style={sty.input} value={responsable} onChange={e => setResponsable(e.target.value)} placeholder="Ej: María García" />
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
-                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>URL Logotipo del Colegio (Opcional)</label>
+                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: C.navy }}>URL Logotipo del Colegio (Opcional)</label>
                 <input style={sty.input} value={logoUrl} onChange={e => setLogoUrl(e.target.value)} placeholder="Ej: https://colegio.com/logo.png" />
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 25 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 30 }}>
               <div>
-                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Pega ISBNs + Alumnos</label>
-                <textarea style={{ ...sty.input, height: 220, fontFamily: 'monospace', lineHeight: 1.5 }} value={inputText} onChange={e => setInputText(e.target.value)} />
+                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: C.navy }}>Pega ISBNs + Alumnos</label>
+                <textarea style={{ ...sty.input, height: 220, fontFamily: 'monospace', lineHeight: 1.6, resize: 'vertical' }} value={inputText} onChange={e => setInputText(e.target.value)} placeholder="9788411826617   48&#10;9788498561661   25" />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>O sube un archivo (CSV/TXT)</label>
-                <div style={{ border: `2px dashed ${C.blue}55`, borderRadius: 12, padding: '50px 20px', textAlign: 'center', background: '#fff', transition: 'all 0.3s' }}>
-                  <div style={{fontSize: 30, marginBottom: 15}}>📄</div>
+                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: C.navy }}>O sube un archivo (CSV/TXT)</label>
+                <div style={{ border: `2px dashed ${C.blue}44`, borderRadius: 16, padding: '60px 20px', textAlign: 'center', background: '#f8fafc', transition: 'all 0.3s' }}>
+                  <div style={{fontSize: 35, marginBottom: 15}}>📄</div>
                   <input type="file" ref={fileRef} accept=".csv,.txt,.tsv" onChange={handleFile} style={{ display: 'none' }} />
                   <button onClick={() => fileRef.current?.click()} style={sty.btn2}>Seleccionar Archivo</button>
+                  <p style={{fontSize: 13, color: C.slate, marginTop: 15}}>Detecta columnas de ISBNs automáticamente</p>
                 </div>
               </div>
             </div>
-            {error && <div style={{ marginTop: 20, padding: '15px', background: '#fef2f0', color: C.coral, borderRadius: 8, fontWeight: 600, borderLeft: `4px solid ${C.coral}` }}>⚠️ {error}</div>}
-            <div style={{ marginTop: 30, textAlign: 'right' }}>
-              <button onClick={handleCruzar} disabled={!inputText.trim()} style={{ ...sty.btn, opacity: inputText.trim() ? 1 : 0.5, fontSize: 16, padding: '15px 30px' }}>Cruzar datos y generar →</button>
+            {error && <div style={{ marginTop: 25, padding: '15px', background: '#fef2f0', color: C.coral, borderRadius: 10, fontWeight: 600, borderLeft: `4px solid ${C.coral}` }}>⚠️ {error}</div>}
+            <div style={{ marginTop: 35, textAlign: 'right', borderTop: `1px solid ${C.muted}`, paddingTop: 25 }}>
+              <button onClick={handleCruzar} disabled={!inputText.trim()} style={{ ...sty.btn, opacity: inputText.trim() ? 1 : 0.5, fontSize: 16, padding: '14px 32px' }}>Cruzar datos y generar →</button>
             </div>
           </div>
         )}
 
-        {/* LOADING DIVERTIDO */}
+        {/* SPINNER SAAS MODERNO */}
         {isAuthenticated && step === 1 && (
-          <div style={{ ...sty.card, textAlign: 'center', padding: '100px 20px', animation: 'fadeIn 0.3s' }}>
-            <div style={{ fontSize: 50, marginBottom: 20, animation: 'spin 2s linear infinite', display: 'inline-block' }}>⚙️</div>
-            <h2 style={{ color: C.navy, margin: '0 0 10px 0', fontSize: 28 }}>{loadingMsg}</h2>
-            <p style={{ color: C.slate, fontSize: 16, margin: 0 }}>{loadingSubMsg}</p>
-            <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '50vh', animation: 'fadeIn 0.4s' }}>
+            <div style={{ width: 60, height: 60, border: `4px solid ${C.muted}`, borderTopColor: C.blue, borderRadius: '50%', animation: 'spin 1s linear infinite', marginBottom: 25 }}></div>
+            <h2 style={{ color: C.navy, margin: '0 0 12px 0', fontSize: 26, fontWeight: 800 }}>{loadingMsg}</h2>
+            <p style={{ color: C.slate, fontSize: 16, margin: 0, fontWeight: 500 }}>{loadingSubMsg}</p>
           </div>
         )}
 
         {isAuthenticated && (step === 2 || step === 3) && calc && (
           <>
             {isC && notFoundList.length > 0 && (
-              <div style={{ background: '#fef2f0', border: `1px solid ${C.coral}`, borderRadius: 12, padding: '20px 25px', marginBottom: 25, boxShadow: '0 4px 15px rgba(212, 81, 61, 0.1)' }}>
+              <div style={{ background: '#fef2f0', border: `1px solid ${C.coral}`, borderRadius: 16, padding: '20px 25px', marginBottom: 25, boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.1)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 15 }}>
                   <div>
-                    <h3 style={{ margin: '0 0 5px 0', color: C.coral, display: 'flex', alignItems: 'center', gap: 8 }}>⚠️ {notFoundList.length} ISBNs ignorados (No están en catálogo)</h3>
-                    <p style={{ margin: 0, color: C.slate, fontSize: 14 }}>Estos libros no se han incluido en la propuesta. ¿Quieres verlos o avisar a Compras?</p>
+                    <h3 style={{ margin: '0 0 6px 0', color: C.coral, display: 'flex', alignItems: 'center', gap: 8, fontSize: 18 }}>⚠️ {notFoundList.length} ISBNs ignorados (No en catálogo)</h3>
+                    <p style={{ margin: 0, color: C.ink, fontSize: 14 }}>Estos libros no se han incluido. ¿Quieres verlos o avisar a Compras por n8n?</p>
                   </div>
                   <div style={{ display: 'flex', gap: 10 }}>
-                    <button onClick={() => setShowMissing(!showMissing)} style={{ ...sty.btn2, borderColor: C.coral, color: C.coral, padding: '8px 15px' }}>
-                      {showMissing ? "Ocultar" : "👀 Ver Listado"}
+                    <button onClick={() => setShowMissing(!showMissing)} style={{ ...sty.btn2, borderColor: C.coral, color: C.coral, padding: '8px 16px', boxShadow: 'none' }}>
+                      {showMissing ? "Ocultar Listado" : "👀 Ver Listado"}
                     </button>
-                    <button onClick={handleSendWebhook} disabled={webhookSent} style={{ ...sty.btn, background: webhookSent ? C.green : C.coral, padding: '8px 15px' }}>
-                      {webhookSent ? "✅ Avisado a Compras" : "✉️ Enviar a Compras"}
+                    <button onClick={handleSendWebhook} disabled={webhookSent} style={{ ...sty.btn, background: webhookSent ? C.green : C.coral, padding: '8px 16px', boxShadow: 'none' }}>
+                      {webhookSent ? "✅ Avisado a Compras" : "✉️ Avisar a Compras"}
                     </button>
                   </div>
                 </div>
                 {showMissing && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 15, background: '#fff', padding: 15, borderRadius: 8, border: `1px solid ${C.coral}33` }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 20, background: '#fff', padding: 15, borderRadius: 10, border: `1px solid ${C.coral}33` }}>
                     {notFoundList.map((isbn, i) => (
-                      <span key={i} style={{ padding: '6px 10px', background: '#fef2f0', borderRadius: 6, fontFamily: 'monospace', fontSize: 13, fontWeight: 'bold', color: C.coral }}>{isbn}</span>
+                      <span key={i} style={{ padding: '6px 10px', background: '#fef2f0', borderRadius: 6, fontFamily: 'monospace', fontSize: 13, fontWeight: '600', color: C.coral }}>{isbn}</span>
                     ))}
                   </div>
                 )}
@@ -442,28 +453,28 @@ export default function App() {
             )}
 
             {isC && (
-              <div style={{ background: '#fff', padding: '20px 25px', borderRadius: 12, marginBottom: 20, border: `1px solid ${C.blue}`, display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap', boxShadow: '0 4px 15px rgba(27, 107, 147, 0.05)' }}>
+              <div style={{ background: '#fff', padding: '20px 25px', borderRadius: 16, marginBottom: 25, border: `1px solid ${C.blue}`, display: 'flex', alignItems: 'center', gap: 25, flexWrap: 'wrap', boxShadow: '0 4px 6px -1px rgba(37,99,235,0.1)' }}>
                 <div style={{ flex: 1, minWidth: 200 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                    <span style={{ fontWeight: 700, color: C.blue }}>🎯 Est. Compra (Slider Base)</span>
-                    <span style={{ fontWeight: 800, color: C.blue }}>{probabilidad}%</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontWeight: 700, color: C.blue, fontSize: 15 }}>🎯 Probabilidad de Compra Base</span>
+                    <span style={{ fontWeight: 800, color: C.blue, fontSize: 16 }}>{probabilidad}%</span>
                   </div>
                   <input type="range" min="10" max="100" step="5" value={probabilidad} onChange={e => setProbabilidad(+e.target.value)} style={{ width: '100%', cursor: 'pointer' }} />
                 </div>
                 <div style={{ display: 'flex', gap: 15, alignItems: 'center' }}>
-                  <div style={{ background: '#f8fafc', padding: '8px 15px', borderRadius: 8, border: `1px solid ${C.muted}`, fontSize: 13, fontWeight: 600 }}>
-                    📄 Gasto Papel: <input type="number" value={costePapel} onChange={e => setCostePapel(+e.target.value)} style={{ width: 45, border: 'none', background:'transparent', outline: 'none', fontWeight: 'bold', color: C.blue }} />%
-                    <span style={{ margin: '0 10px', color: C.muted }}>|</span>
-                    💻 Gasto Digital: <input type="number" value={costeDigital} onChange={e => setCosteDigital(+e.target.value)} style={{ width: 45, border: 'none', background:'transparent', outline: 'none', fontWeight: 'bold', color: C.blue }} />%
+                  <div style={{ background: '#f8fafc', padding: '10px 18px', borderRadius: 10, border: `1px solid ${C.muted}`, fontSize: 14, fontWeight: 600, color: C.navy }}>
+                    📄 Op. Papel: <input type="number" value={costePapel} onChange={e => setCostePapel(+e.target.value)} style={{ width: 45, border: 'none', background:'transparent', outline: 'none', fontWeight: 'bold', color: C.blue, fontSize: 15 }} />%
+                    <span style={{ margin: '0 12px', color: C.muted }}>|</span>
+                    💻 Op. Digital: <input type="number" value={costeDigital} onChange={e => setCosteDigital(+e.target.value)} style={{ width: 45, border: 'none', background:'transparent', outline: 'none', fontWeight: 'bold', color: C.blue, fontSize: 15 }} />%
                   </div>
-                  <button onClick={handleGuardar} style={{ ...sty.btn, background: C.teal, padding: '12px 20px', fontSize: 15 }}>{saving ? "⏳ Guardando..." : "💾 Generar URLs"}</button>
+                  <button onClick={handleGuardar} style={{ ...sty.btn, background: `linear-gradient(to bottom, ${C.teal}, #0f766e)`, padding: '14px 24px', fontSize: 15, boxShadow: '0 4px 6px -1px rgba(13,148,136,0.2)' }}>{saving ? "⏳ Guardando..." : "💾 Generar URLs"}</button>
                 </div>
               </div>
             )}
 
-            {/* KPIS FIJOS EN MODO COMERCIAL */}
+            {/* KPIS FIJOS EN MODO COMERCIAL (Se ven en cualquier pestaña interna) */}
             {isC && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15, marginBottom: 25 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 15, marginBottom: 25, animation: 'fadeIn 0.3s' }}>
                 <KPI label="Facturación" value={fmt(calc.tv)} sub={`Estimada al ${probabilidad}%`} icon="💰" />
                 <KPI label="Total Costes Centro" value={fmt(calc.tcc + calc.totalCostOp)} sub={`Material: ${fmt(calc.tcc)}`} icon="📉" color={C.slate} />
                 <KPI label="Beneficio Colegio" value={fmt(calc.benColegio)} sub="Comisión + Rappel" icon="🏫" accent />
@@ -472,36 +483,35 @@ export default function App() {
             )}
 
             {shareUrl && commercialUrl && isC && (
-              <div style={{ padding: 25, background: '#e8f5e9', borderRadius: 12, marginBottom: 25, border: '1px solid #c8e6c9', textAlign: 'center', animation: 'fadeIn 0.5s' }}>
-                <strong style={{ color: C.green, fontSize: 18 }}>¡Enlaces generados con éxito!</strong>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 20, textAlign: 'left' }}>
+              <div style={{ padding: 30, background: '#e8f5e9', borderRadius: 16, marginBottom: 30, border: '1px solid #bbf7d0', textAlign: 'center', animation: 'fadeIn 0.5s', boxShadow: '0 4px 6px -1px rgba(34,197,94,0.1)' }}>
+                <div style={{ fontSize: 35, marginBottom: 10 }}>🎉</div>
+                <strong style={{ color: C.green, fontSize: 22, fontWeight: 800 }}>¡Enlaces generados con éxito!</strong>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginTop: 25, textAlign: 'left' }}>
                   
-                  <div style={{ background: '#fff', padding: 20, borderRadius: 10, border: `1px solid ${C.muted}` }}>
-                    <div style={{ fontSize: 12, color: C.slate, fontWeight: 800, textTransform: 'uppercase', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
+                  <div style={{ background: '#fff', padding: 25, borderRadius: 12, border: `1px solid ${C.muted}`, boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                    <div style={{ fontSize: 12, color: C.slate, fontWeight: 800, textTransform: 'uppercase', marginBottom: 15, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>🏫 Enlace para el Cliente</span>
-                      <span style={{ color: C.coral, background: '#fef2f0', padding: '3px 8px', borderRadius: 4 }}>Contraseña: {pin}</span>
+                      <span style={{ color: C.coral, background: '#fef2f0', padding: '4px 10px', borderRadius: 6, fontSize: 13, border: `1px solid ${C.coral}33` }}>PIN: <strong>{pin}</strong></span>
                     </div>
-                    <a href={shareUrl} target="_blank" rel="noreferrer" style={{ color: C.blue, fontWeight: 'bold', wordBreak: 'break-all', fontSize: 14 }}>{shareUrl}</a>
-                    <p style={{ fontSize: 12, color: C.slate, margin: '10px 0 0' }}>Envía este link y la contraseña al colegio.</p>
+                    <a href={shareUrl} target="_blank" rel="noreferrer" style={{ color: C.blue, fontWeight: 700, wordBreak: 'break-all', fontSize: 15, textDecoration: 'none', borderBottom: `1px solid ${C.blue}55` }}>{shareUrl}</a>
+                    <p style={{ fontSize: 13, color: C.slate, margin: '15px 0 0', lineHeight: 1.5 }}>Envía este link y la contraseña al responsable del colegio.</p>
                   </div>
 
-                  <div style={{ background: '#fff', padding: 20, borderRadius: 10, border: `1px solid ${C.muted}` }}>
-                    <div style={{ fontSize: 12, color: C.slate, fontWeight: 800, textTransform: 'uppercase', marginBottom: 10 }}>📝 Tu enlace Privado (Edición)</div>
-                    <a href={commercialUrl} target="_blank" rel="noreferrer" style={{ color: C.teal, fontWeight: 'bold', wordBreak: 'break-all', fontSize: 14 }}>{commercialUrl}</a>
-                    <p style={{ fontSize: 12, color: C.slate, margin: '10px 0 0' }}>Guarda este link para recuperar y editar la propuesta.</p>
+                  <div style={{ background: '#fff', padding: 25, borderRadius: 12, border: `1px solid ${C.muted}`, boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                    <div style={{ fontSize: 12, color: C.slate, fontWeight: 800, textTransform: 'uppercase', marginBottom: 15 }}>📝 Tu enlace Privado (Edición)</div>
+                    <a href={commercialUrl} target="_blank" rel="noreferrer" style={{ color: C.teal, fontWeight: 700, wordBreak: 'break-all', fontSize: 15, textDecoration: 'none', borderBottom: `1px solid ${C.teal}55` }}>{commercialUrl}</a>
+                    <p style={{ fontSize: 13, color: C.slate, margin: '15px 0 0', lineHeight: 1.5 }}>Guarda este link en tu CRM. Te pedirá el PIN Maestro ({COMMERCIAL_PIN}) para volver a editar.</p>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* PESTAÑAS */}
-            <div style={{ display: 'flex', gap: 10, marginBottom: 25, flexWrap: 'wrap', borderBottom: `2px solid ${C.muted}`, paddingBottom: 15 }}>
-              {!isC && <button onClick={() => setTab('propuesta')} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'propuesta' ? C.blue : '#fff', color: tab === 'propuesta' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', boxShadow: tab === 'propuesta' ? '0 4px 10px rgba(27,107,147,0.2)' : 'none' }}>Propuesta Integral</button>}
+            <div style={{ display: 'flex', gap: 10, marginBottom: 25, flexWrap: 'wrap', borderBottom: `1px solid ${C.muted}`, paddingBottom: 20 }}>
+              {!isC && <button onClick={() => setTab('propuesta')} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === 'propuesta' ? C.blue : '#fff', color: tab === 'propuesta' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: tab === 'propuesta' ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>Propuesta Integral</button>}
               {['resumen', 'detalle'].map(t => (
-                <button key={t} onClick={() => setTab(t)} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === t ? C.blue : '#fff', color: tab === t ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize', boxShadow: tab === t ? '0 4px 10px rgba(27,107,147,0.2)' : 'none' }}>{t}</button>
+                <button key={t} onClick={() => setTab(t)} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === t ? C.blue : '#fff', color: tab === t ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize', transition: 'all 0.2s', boxShadow: tab === t ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>{t}</button>
               ))}
-              {/* LA PESTAÑA EDITORIALES AHORA LA VEN TODOS */}
-              <button onClick={() => setTab('editoriales')} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'editoriales' ? C.blue : '#fff', color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', boxShadow: tab === 'editoriales' ? '0 4px 10px rgba(27,107,147,0.2)' : 'none' }}>Editoriales y Rappel</button>
+              <button onClick={() => setTab('editoriales')} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === 'editoriales' ? C.blue : '#fff', color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: tab === 'editoriales' ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>Editoriales y Rappel</button>
             </div>
 
             {/* 1. PROPUESTA (NIVEL DIOS - CLIENTE) */}
@@ -514,48 +524,50 @@ export default function App() {
                   borderRadius: 24, padding: '60px 50px', color: '#fff', 
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
                   flexWrap: 'wrap', gap: 40, marginBottom: 40, 
-                  boxShadow: '0 20px 40px rgba(27, 107, 147, 0.25), 0 1px 3px rgba(255,255,255,0.1) inset' 
+                  boxShadow: '0 20px 25px -5px rgba(37,99,235,0.3), 0 8px 10px -6px rgba(37,99,235,0.2), 0 1px 3px rgba(255,255,255,0.1) inset' 
                 }}>
                   <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px)', backgroundSize: '24px 24px', opacity: 0.5, pointerEvents: 'none' }}></div>
                   
                   <div style={{ flex: 1, minWidth: 320, position: 'relative', zIndex: 1 }}>
-                    <div style={{ display: 'inline-block', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', padding: '6px 14px', borderRadius: 30, fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 20, backdropFilter: 'blur(5px)' }}>
+                    <div style={{ display: 'inline-block', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', padding: '6px 14px', borderRadius: 30, fontSize: 12, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 20, backdropFilter: 'blur(5px)' }}>
                       ✨ Propuesta Exclusiva
                     </div>
                     
                     <h2 style={{ margin: '0 0 20px 0', fontSize: 46, lineHeight: 1.1, fontWeight: 800, letterSpacing: '-1px' }}>Hazlo fácil con {BRAND.name}</h2>
                     
                     {responsable && (
-                      <div style={{ display: 'inline-flex', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '8px 16px', borderRadius: 8, marginBottom: 25, borderLeft: `4px solid ${C.gold}` }}>
-                        <span style={{ fontSize: 15, opacity: 0.9 }}>Para: <strong>{responsable} ({nombre})</strong></span>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', background: 'rgba(0,0,0,0.25)', padding: '10px 18px', borderRadius: 10, marginBottom: 25, borderLeft: `4px solid ${C.gold}`, boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+                        <span style={{ fontSize: 16, opacity: 0.95, fontWeight: 500 }}>Para: <strong style={{fontWeight: 800}}>{responsable} ({nombre})</strong></span>
                       </div>
                     )}
                     
-                    <p style={{ fontSize: 17, opacity: 0.85, maxWidth: 650, margin: 0, lineHeight: 1.6, fontWeight: 400 }}>Imagina tener una tienda online propia del colegio, desde donde vender todo lo necesario para el curso escolar sin complicaciones. Simplificando los procesos para las familias y aumentando la rentabilidad de tu centro.</p>
+                    <p style={{ fontSize: 18, opacity: 0.9, maxWidth: 650, margin: 0, lineHeight: 1.6, fontWeight: 400 }}>Imagina tener una tienda online propia del colegio, desde donde vender todo lo necesario para el curso escolar sin complicaciones. Simplificando los procesos para las familias y aumentando la rentabilidad de tu centro.</p>
                   </div>
 
                   {logoUrl && (
                     <div style={{ position: 'relative', zIndex: 1 }}>
-                      <div style={{ background: '#fff', padding: 25, borderRadius: '50%', width: 160, height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 15px 35px rgba(0,0,0,0.2), 0 0 0 8px rgba(255,255,255,0.1)' }}>
+                      <div style={{ background: '#fff', padding: 25, borderRadius: '50%', width: 170, height: 170, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.4), 0 0 0 10px rgba(255,255,255,0.1)' }}>
                         <img src={logoUrl} alt="Logo Colegio" style={{ maxWidth: '85%', maxHeight: '85%', objectFit: 'contain', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.05))' }} onError={(e) => e.target.style.display='none'} />
                       </div>
                     </div>
                   )}
                 </div>
 
-                <h3 style={{ fontSize: 28, color: C.navy, textAlign: 'center', marginTop: 50, marginBottom: 10 }}>Proceso rentable para el colegio</h3>
-                <p style={{ textAlign: 'center', color: C.slate, maxWidth: 800, margin: '0 auto 30px', fontSize: 16 }}>Cada venta en la tienda online se traduce en ingresos para tu centro. Un dinero que podrás invertir en modernizar aulas o mejorar instalaciones.</p>
+                <h3 style={{ fontSize: 30, color: C.navy, textAlign: 'center', marginTop: 60, marginBottom: 15, fontWeight: 800, letterSpacing: '-0.5px' }}>Proceso rentable para el colegio</h3>
+                <p style={{ textAlign: 'center', color: C.slate, maxWidth: 800, margin: '0 auto 40px', fontSize: 17, lineHeight: 1.6 }}>Cada venta en la tienda online se traduce en ingresos para tu centro. Un dinero que podrás invertir en modernizar aulas o mejorar instalaciones.</p>
                 
-                <div style={{ ...sty.card, border: `2px solid ${C.teal}`, position: 'relative', boxShadow: '0 10px 30px rgba(0,137,123,0.08)' }}>
+                <div style={{ ...sty.card, border: `2px solid ${C.teal}`, position: 'relative', boxShadow: '0 20px 25px -5px rgba(13,148,136,0.1), 0 8px 10px -6px rgba(13,148,136,0.1)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 30 }}>
                     <div style={{ flex: 1, minWidth: 300 }}>
-                      <h3 style={{ marginTop: 0, color: C.teal, display: 'flex', alignItems: 'center', gap: 10, fontSize: 22 }}>🧮 Simulador de Retorno</h3>
-                      <p style={{ color: C.slate, fontSize: 15, lineHeight: 1.5, margin: '10px 0 25px 0' }}>Descubre tu beneficio ajustando la estimación de familias que utilizarán la plataforma.</p>
+                      <h3 style={{ marginTop: 0, color: C.teal, display: 'flex', alignItems: 'center', gap: 10, fontSize: 24, fontWeight: 800, letterSpacing: '-0.5px' }}>
+                        <span style={{background: `${C.teal}15`, padding: 8, borderRadius: 10, display: 'flex'}}>🧮</span> Simulador de Retorno
+                      </h3>
+                      <p style={{ color: C.slate, fontSize: 16, lineHeight: 1.6, margin: '15px 0 30px 0' }}>Descubre tu beneficio ajustando la estimación de familias que utilizarán la plataforma a lo largo del curso.</p>
                       
-                      <div style={{ background: '#f8fafc', padding: '15px 20px', borderRadius: 10 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                          <span style={{ fontWeight: 700, color: C.ink }}>Familias estimadas</span>
-                          <span style={{ fontWeight: 800, color: C.teal, fontSize: 18 }}>{probabilidad}%</span>
+                      <div style={{ background: '#f8fafc', padding: '20px 25px', borderRadius: 12, border: `1px solid ${C.muted}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                          <span style={{ fontWeight: 700, color: C.navy, fontSize: 15 }}>Familias estimadas</span>
+                          <span style={{ fontWeight: 800, color: C.teal, fontSize: 20 }}>{probabilidad}%</span>
                         </div>
                         <input type="range" min="10" max="100" step="5" value={probabilidad} onChange={e => setProbabilidad(+e.target.value)} style={{ width: '100%', cursor: 'pointer', accentColor: C.teal }} />
                       </div>
@@ -566,35 +578,35 @@ export default function App() {
                       {calc.rap > 0 && <KPI label="Rappel Garantizado" value={fmt(calc.rap)} sub="Por mejora de condiciones" color={C.coral} />}
                     </div>
                   </div>
-                  <div style={{ borderTop: `1px solid ${C.muted}`, marginTop: 25, paddingTop: 15, textAlign: 'center' }}>
-                    <p style={{ fontSize: 13, color: C.slate, fontStyle: 'italic', margin: 0 }}>* Datos aproximados. Sujeto a variaciones finales de compra y actualización de tarifas anuales.</p>
+                  <div style={{ borderTop: `1px solid ${C.muted}`, marginTop: 30, paddingTop: 20, textAlign: 'center' }}>
+                    <p style={{ fontSize: 14, color: C.slate, fontStyle: 'italic', margin: 0 }}>* Datos aproximados. Sujeto a variaciones finales de compra y actualización de tarifas de mercado.</p>
                   </div>
                 </div>
 
-                <h3 style={{ fontSize: 28, color: C.navy, textAlign: 'center', marginTop: 60, marginBottom: 10 }}>Nosotros nos encargamos de todo</h3>
-                <p style={{ textAlign: 'center', color: C.slate, maxWidth: 800, margin: '0 auto 40px', fontSize: 16 }}>Tendrás a un especialista que guía al colegio y un equipo de atención al cliente para las familias. Vende libros, licencias, material, uniformes y más.</p>
+                <h3 style={{ fontSize: 30, color: C.navy, textAlign: 'center', marginTop: 70, marginBottom: 15, fontWeight: 800, letterSpacing: '-0.5px' }}>Nosotros nos encargamos de todo</h3>
+                <p style={{ textAlign: 'center', color: C.slate, maxWidth: 800, margin: '0 auto 50px', fontSize: 17, lineHeight: 1.6 }}>Tendrás a un especialista que guía al colegio y un equipo de atención al cliente para las familias. Vende libros, licencias, material, uniformes y más.</p>
                 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 25, marginBottom: 50 }}>
-                  <div style={{ padding: 30, background: '#fff', borderRadius: 16, borderTop: `5px solid ${C.blue}`, boxShadow: '0 4px 15px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-5px)'} onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
-                    <div style={{ fontSize: 35, marginBottom: 15 }}>💻</div>
-                    <h3 style={{ margin: '0 0 10px 0', fontSize: 20 }}>Plataforma Adaptable</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 25, marginBottom: 60 }}>
+                  <div style={{ padding: 35, background: '#fff', borderRadius: 20, borderTop: `6px solid ${C.blue}`, boxShadow: '0 10px 15px -3px rgba(0,0,0,0.05)', transition: 'all 0.3s', cursor: 'default' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-8px)'} onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
+                    <div style={{ fontSize: 40, marginBottom: 20, background: `${C.blue}15`, display: 'inline-block', padding: 15, borderRadius: 16 }}>💻</div>
+                    <h3 style={{ margin: '0 0 12px 0', fontSize: 20, fontWeight: 800, color: C.navy }}>Plataforma Adaptable</h3>
                     <p style={{ margin: 0, color: C.slate, fontSize: 15, lineHeight: 1.6 }}>Nuestra plataforma se adapta a cualquier producto. Desde libros hasta la agenda escolar o papeletas para sorteos.</p>
                   </div>
-                  <div style={{ padding: 30, background: '#fff', borderRadius: 16, borderTop: `5px solid ${C.teal}`, boxShadow: '0 4px 15px rgba(0,0,0,0.03)', transition: 'transform 0.2s' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-5px)'} onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
-                    <div style={{ fontSize: 35, marginBottom: 15 }}>📦</div>
-                    <h3 style={{ margin: '0 0 10px 0', fontSize: 20 }}>Logística 100%</h3>
+                  <div style={{ padding: 35, background: '#fff', borderRadius: 20, borderTop: `6px solid ${C.teal}`, boxShadow: '0 10px 15px -3px rgba(0,0,0,0.05)', transition: 'all 0.3s' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-8px)'} onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
+                    <div style={{ fontSize: 40, marginBottom: 20, background: `${C.teal}15`, display: 'inline-block', padding: 15, borderRadius: 16 }}>📦</div>
+                    <h3 style={{ margin: '0 0 12px 0', fontSize: 20, fontWeight: 800, color: C.navy }}>Logística 100%</h3>
                     <p style={{ margin: 0, color: C.slate, fontSize: 15, lineHeight: 1.6 }}>Asumimos pedidos, almacenamiento, preparación y entrega. El centro no invierte ni un minuto.</p>
                   </div>
-                  <div style={{ padding: 30, background: '#fff', borderRadius: 16, borderTop: `5px solid ${C.gold}`, boxShadow: '0 4px 15px rgba(0,0,0,0.03)', transition: 'transform 0.2s' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-5px)'} onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
-                    <div style={{ fontSize: 35, marginBottom: 15 }}>💬</div>
-                    <h3 style={{ margin: '0 0 10px 0', fontSize: 20 }}>Atención a Familias</h3>
+                  <div style={{ padding: 35, background: '#fff', borderRadius: 20, borderTop: `6px solid ${C.gold}`, boxShadow: '0 10px 15px -3px rgba(0,0,0,0.05)', transition: 'all 0.3s' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-8px)'} onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
+                    <div style={{ fontSize: 40, marginBottom: 20, background: `${C.gold}22`, display: 'inline-block', padding: 15, borderRadius: 16 }}>💬</div>
+                    <h3 style={{ margin: '0 0 12px 0', fontSize: 20, fontWeight: 800, color: C.navy }}>Atención a Familias</h3>
                     <p style={{ margin: 0, color: C.slate, fontSize: 15, lineHeight: 1.6 }}>Resolvemos dudas, incidencias y devoluciones. Liberamos a la secretaría del estrés de campaña.</p>
                   </div>
                 </div>
 
-                <div style={{ background: '#fff', borderRadius: 16, padding: '50px 40px', border: `1px solid ${C.muted}`, marginBottom: 50, boxShadow: '0 8px 30px rgba(0,0,0,0.03)' }}>
-                  <h3 style={{ fontSize: 28, color: C.navy, marginTop: 0, marginBottom: 40, textAlign: 'center' }}>¿Cómo funciona para el colegio?</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <div style={{ background: '#fff', borderRadius: 24, padding: '60px 50px', border: `1px solid ${C.muted}`, marginBottom: 60, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.05)' }}>
+                  <h3 style={{ fontSize: 30, color: C.navy, marginTop: 0, marginBottom: 45, textAlign: 'center', fontWeight: 800, letterSpacing: '-0.5px' }}>¿Cómo funciona para el colegio?</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 25 }}>
                     {[
                       "Tras contactar con nosotros, os pediremos el listado de ISBN y resto de productos a incluir.",
                       "Elegís un dominio acorde al centro y nosotros nos encargamos de ponerlo todo en marcha, a tu nombre y con tus contenidos.",
@@ -602,30 +614,30 @@ export default function App() {
                       "Asumimos toda la logística con las editoriales: pedidos, almacenamiento, entrega o devolución.",
                       "Nos encargamos de toda la atención al cliente para que no os preocupéis de seguimientos o incidencias."
                     ].map((text, i) => (
-                      <div key={i} style={{ display: 'flex', gap: 25, alignItems: 'center', background: '#f8fafc', padding: 25, borderRadius: 12 }}>
-                        <div style={{ background: C.blue, color: '#fff', width: 45, height: 45, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 20, flexShrink: 0, boxShadow: '0 4px 10px rgba(27,107,147,0.3)' }}>{i+1}</div>
-                        <div style={{ color: C.ink, fontSize: 16, lineHeight: 1.5 }}>{text}</div>
+                      <div key={i} style={{ display: 'flex', gap: 25, alignItems: 'center', background: '#f8fafc', padding: '25px 30px', borderRadius: 16, border: `1px solid ${C.muted}` }}>
+                        <div style={{ background: `linear-gradient(135deg, ${C.blue}, #1e40af)`, color: '#fff', width: 50, height: 50, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 22, flexShrink: 0, boxShadow: '0 4px 10px rgba(37,99,235,0.3)' }}>{i+1}</div>
+                        <div style={{ color: C.navy, fontSize: 17, lineHeight: 1.6, fontWeight: 500 }}>{text}</div>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div style={{ background: `linear-gradient(135deg, ${C.teal}08, ${C.blue}08)`, borderRadius: 24, padding: '50px 40px', border: `1px solid ${C.teal}33` }}>
-                  <h3 style={{ fontSize: 28, color: C.teal, marginTop: 0, marginBottom: 40, textAlign: 'center' }}>Un proceso sencillo para las familias</h3>
+                <div style={{ background: `linear-gradient(135deg, ${C.teal}0a, ${C.blue}0a)`, borderRadius: 24, padding: '60px 50px', border: `1px solid ${C.teal}33` }}>
+                  <h3 style={{ fontSize: 30, color: C.teal, marginTop: 0, marginBottom: 50, textAlign: 'center', fontWeight: 800, letterSpacing: '-0.5px' }}>Un proceso sencillo para las familias</h3>
                   
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 20, textAlign: 'center', marginBottom: 50 }}>
-                    <div style={{ background: '#fff', padding: 20, borderRadius: 12, boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}><div style={{ fontSize: 40, marginBottom: 15 }}>🏫</div><div style={{ fontWeight: 700, color: C.navy, fontSize: 16 }}>1. Centro define material</div></div>
-                    <div style={{ background: '#fff', padding: 20, borderRadius: 12, boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}><div style={{ fontSize: 40, marginBottom: 15 }}>🛒</div><div style={{ fontWeight: 700, color: C.navy, fontSize: 16 }}>2. Familias entran a la web</div></div>
-                    <div style={{ background: '#fff', padding: 20, borderRadius: 12, boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}><div style={{ fontSize: 40, marginBottom: 15 }}>💳</div><div style={{ fontWeight: 700, color: C.navy, fontSize: 16 }}>3. Pedido con facilidades</div></div>
-                    <div style={{ background: '#fff', padding: 20, borderRadius: 12, boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}><div style={{ fontSize: 40, marginBottom: 15 }}>🚚</div><div style={{ fontWeight: 700, color: C.navy, fontSize: 16 }}>4. Reciben en casa</div></div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 20, textAlign: 'center', marginBottom: 60 }}>
+                    <div style={{ background: '#fff', padding: '30px 20px', borderRadius: 16, boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}><div style={{ fontSize: 45, marginBottom: 20 }}>🏫</div><div style={{ fontWeight: 700, color: C.navy, fontSize: 17 }}>1. Centro define material</div></div>
+                    <div style={{ background: '#fff', padding: '30px 20px', borderRadius: 16, boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}><div style={{ fontSize: 45, marginBottom: 20 }}>🛒</div><div style={{ fontWeight: 700, color: C.navy, fontSize: 17 }}>2. Familias compran web</div></div>
+                    <div style={{ background: '#fff', padding: '30px 20px', borderRadius: 16, boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}><div style={{ fontSize: 45, marginBottom: 20 }}>💳</div><div style={{ fontWeight: 700, color: C.navy, fontSize: 17 }}>3. Facilidades de pago</div></div>
+                    <div style={{ background: '#fff', padding: '30px 20px', borderRadius: 16, boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}><div style={{ fontSize: 45, marginBottom: 20 }}>🚚</div><div style={{ fontWeight: 700, color: C.navy, fontSize: 17 }}>4. Reciben en casa</div></div>
                   </div>
 
-                  <div style={{ background: '#fff', padding: 35, borderRadius: 16, boxShadow: '0 8px 25px rgba(0,0,0,0.04)' }}>
-                    <h4 style={{ margin: '0 0 20px 0', color: C.navy, fontSize: 22 }}>Facilitamos la vida a las familias</h4>
-                    <ul style={{ margin: 0, paddingLeft: 20, color: C.slate, fontSize: 16, lineHeight: 1.8 }}>
-                      <li style={{marginBottom: 10}}><strong>Facilidades de pago</strong> para no hacer esfuerzos económicos al inicio de curso.</li>
-                      <li style={{marginBottom: 10}}><strong>Evitamos errores:</strong> la lista aparece exacta según el año y curso del colegio.</li>
-                      <li style={{marginBottom: 10}}><strong>Licencias digitales cubiertas:</strong> se asocian directamente al correo del alumno sin configurar nada.</li>
+                  <div style={{ background: '#fff', padding: 40, borderRadius: 20, boxShadow: '0 10px 30px rgba(0,0,0,0.05)', border: `1px solid ${C.muted}` }}>
+                    <h4 style={{ margin: '0 0 25px 0', color: C.navy, fontSize: 24, fontWeight: 800, letterSpacing: '-0.5px' }}>Facilitamos la vida a las familias</h4>
+                    <ul style={{ margin: 0, paddingLeft: 25, color: C.slate, fontSize: 17, lineHeight: 1.8 }}>
+                      <li style={{marginBottom: 15}}><strong>Facilidades de pago</strong> para no hacer esfuerzos económicos al inicio de curso.</li>
+                      <li style={{marginBottom: 15}}><strong>Evitamos errores:</strong> la lista aparece exacta según el año y curso del colegio.</li>
+                      <li style={{marginBottom: 15}}><strong>Licencias digitales cubiertas:</strong> se asocian directamente al correo del alumno sin configurar nada.</li>
                       <li><strong>Facturación simple:</strong> facturamos a las familias, y a nosotros nos facturan las editoriales.</li>
                     </ul>
                   </div>
@@ -634,7 +646,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 2. RESUMEN (No Comercial - El Comercial ya tiene los KPIs arriba) */}
+            {/* 2. RESUMEN Y GRÁFICOS (SaaS Aesthetics) */}
             {tab === 'resumen' && (
               <div style={{ animation: 'fadeIn 0.3s' }}>
                 {!isC && (
@@ -645,64 +657,70 @@ export default function App() {
                   </div>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 25 }}>
                   <div style={sty.card}>
-                    <h3 style={{ marginTop: 0, fontSize: 18 }}>Ventas por Editorial</h3>
-                    <ResponsiveContainer width="100%" height={320}>
+                    <h3 style={{ marginTop: 0, fontSize: 20, color: C.navy, fontWeight: 800, letterSpacing: '-0.5px', marginBottom: 25 }}>Ventas por Editorial</h3>
+                    <ResponsiveContainer width="100%" height={350}>
                       <BarChart data={calc.prov.map(p => ({ name: sh(p.p), Venta: Math.round(p.tv) }))} layout="vertical" margin={{ left: 10 }}>
+                        <defs>
+                          <linearGradient id="colorVenta" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0%" stopColor={C.blue} stopOpacity={0.8}/>
+                            <stop offset="100%" stopColor={C.teal} stopOpacity={1}/>
+                          </linearGradient>
+                        </defs>
                         <XAxis type="number" hide />
-                        <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 12, fill: C.navy, fontWeight: 600 }} />
-                        <Tooltip formatter={v => fmt(v)} cursor={{fill: '#f4f7fa'}} contentStyle={{borderRadius: 8, border: 'none', boxShadow: '0 4px 15px rgba(0,0,0,0.1)'}} />
-                        <Bar dataKey="Venta" fill={C.blue} radius={[0, 6, 6, 0]} barSize={18} />
+                        <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 13, fill: C.slate, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                        <Tooltip formatter={v => fmt(v)} cursor={{fill: '#f1f5f9'}} contentStyle={{borderRadius: 12, border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', padding: '10px 15px', fontWeight: 600, color: C.navy}} />
+                        <Bar dataKey="Venta" fill="url(#colorVenta)" radius={[0, 8, 8, 0]} barSize={20} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
                   <div style={sty.card}>
-                    <h3 style={{ marginTop: 0, fontSize: 18 }}>Distribución</h3>
-                    <ResponsiveContainer width="100%" height={320}>
+                    <h3 style={{ marginTop: 0, fontSize: 20, color: C.navy, fontWeight: 800, letterSpacing: '-0.5px', marginBottom: 25 }}>Distribución</h3>
+                    <ResponsiveContainer width="100%" height={350}>
                       <PieChart>
-                        <Pie data={calc.prov.map((p,i) => ({ name: sh(p.p), value: Math.round(p.tv), fill: C.ch[i%C.ch.length] }))} dataKey="value" cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={2} />
-                        <Tooltip formatter={v => fmt(v)} contentStyle={{borderRadius: 8, border: 'none', boxShadow: '0 4px 15px rgba(0,0,0,0.1)'}} />
+                        <Pie data={calc.prov.map((p,i) => ({ name: sh(p.p), value: Math.round(p.tv), fill: C.ch[i%C.ch.length] }))} dataKey="value" cx="50%" cy="50%" innerRadius={75} outerRadius={110} paddingAngle={3} />
+                        <Tooltip formatter={v => fmt(v)} contentStyle={{borderRadius: 12, border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', padding: '10px 15px', fontWeight: 600, color: C.navy}} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
-                <p style={{ fontSize: 12, color: C.slate, fontStyle: 'italic', textAlign: 'center' }}>* Datos aproximados. Sujeto a variaciones finales de compra y actualización de tarifas anuales.</p>
+                <p style={{ fontSize: 13, color: C.slate, fontStyle: 'italic', textAlign: 'center', marginTop: 10 }}>* Datos aproximados. Sujeto a variaciones finales de compra y actualización de tarifas anuales.</p>
               </div>
             )}
 
             {/* 3. DETALLE */}
             {tab === 'detalle' && (
               <div style={{...sty.card, animation: 'fadeIn 0.3s'}}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-                  <h3 style={{ margin: 0 }}>Listado Oficial de Títulos ({calc.t})</h3>
-                  <input type="text" placeholder="Buscar ISBN o título..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...sty.input, width: 300 }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20, alignItems: 'center', flexWrap: 'wrap', gap: 15 }}>
+                  <h3 style={{ margin: 0, fontSize: 20, color: C.navy, fontWeight: 800, letterSpacing: '-0.5px' }}>Listado Oficial de Títulos ({calc.t})</h3>
+                  <input type="text" placeholder="Buscar ISBN o título..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...sty.input, width: 300, padding: '10px 15px' }} />
                 </div>
-                <div style={{ overflowX: 'auto', maxHeight: 600, borderRadius: 8, border: `1px solid ${C.muted}` }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 10 }}>
-                      <tr style={{ textAlign: 'left', borderBottom: `2px solid ${C.muted}` }}>
-                        <th style={{ padding: 15 }}>ISBN</th>
-                        <th style={{ padding: 15 }}>Título</th>
-                        <th style={{ padding: 15, textAlign: 'center' }}>Fmt</th>
-                        <th style={{ padding: 15 }}>PVP</th>
-                        <th style={{ padding: 15, textAlign: 'center' }}>Alumnos Base</th>
-                        <th style={{ padding: 15, textAlign: 'center' }}>Est. Compra ({probabilidad}%)</th>
-                        <th style={{ padding: 15, textAlign: 'right' }}>Venta Estimada</th>
+                <div style={{ overflowX: 'auto', maxHeight: 600, borderRadius: 12, border: `1px solid ${C.muted}`, boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                    <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 10, boxShadow: '0 1px 0 rgba(0,0,0,0.05)' }}>
+                      <tr style={{ textAlign: 'left' }}>
+                        <th style={{ padding: '15px 20px', color: C.slate, fontWeight: 700 }}>ISBN</th>
+                        <th style={{ padding: '15px 20px', color: C.slate, fontWeight: 700 }}>Título</th>
+                        <th style={{ padding: '15px 20px', textAlign: 'center', color: C.slate, fontWeight: 700 }}>Fmt</th>
+                        <th style={{ padding: '15px 20px', color: C.slate, fontWeight: 700 }}>PVP</th>
+                        <th style={{ padding: '15px 20px', textAlign: 'center', color: C.slate, fontWeight: 700 }}>Alumnos Base</th>
+                        <th style={{ padding: '15px 20px', textAlign: 'center', color: C.teal, fontWeight: 800 }}>Est. ({probabilidad}%)</th>
+                        <th style={{ padding: '15px 20px', textAlign: 'right', color: C.slate, fontWeight: 700 }}>Venta Estimada</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filtered.map((r, i) => (
-                        <tr key={i} style={{ borderBottom: `1px solid ${C.muted}`, background: i % 2 === 0 ? '#fff' : '#fcfcfc', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#f0f5f9'} onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#fcfcfc'}>
-                          <td style={{ padding: 12, fontFamily: 'monospace', color: C.slate }}>{r.isbn}</td>
-                          <td style={{ padding: 12, fontWeight: 600 }}>{r.titulo}</td>
-                          <td style={{ padding: 12, fontSize: 16, textAlign: 'center' }}>{r.isPapel ? '📄' : '💻'}</td>
-                          <td style={{ padding: 12 }}>{fmt(r.pvp)}</td>
-                          <td style={{ padding: 12, textAlign: 'center' }}>
-                            <input type="number" value={r.alumnos} onChange={e => updateAlumnos(r.isbn, e.target.value)} disabled={!isC} style={{ width: 60, padding: 6, textAlign: 'center', border: `1px solid ${C.muted}`, borderRadius: 6, background: isC ? '#fff' : 'transparent', fontWeight: 'bold' }} />
+                        <tr key={i} style={{ borderBottom: `1px solid ${C.muted}`, background: i % 2 === 0 ? '#fff' : '#fcfcfc', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'} onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#fcfcfc'}>
+                          <td style={{ padding: '15px 20px', fontFamily: 'monospace', color: C.slate, fontSize: 13 }}>{r.isbn}</td>
+                          <td style={{ padding: '15px 20px', fontWeight: 600, color: C.navy }}>{r.titulo}</td>
+                          <td style={{ padding: '15px 20px', fontSize: 18, textAlign: 'center' }}>{r.isPapel ? '📄' : '💻'}</td>
+                          <td style={{ padding: '15px 20px', color: C.navy }}>{fmt(r.pvp)}</td>
+                          <td style={{ padding: '15px 20px', textAlign: 'center' }}>
+                            <input type="number" value={r.alumnos} onChange={e => updateAlumnos(r.isbn, e.target.value)} disabled={!isC} style={{ width: 60, padding: 8, textAlign: 'center', border: `1px solid ${C.muted}`, borderRadius: 8, background: isC ? '#fff' : 'transparent', fontWeight: 'bold', color: C.navy }} />
                           </td>
-                          <td style={{ padding: 12, textAlign: 'center', fontWeight: 800, color: C.teal }}>{Math.round(r.alumsEstimados)}</td>
-                          <td style={{ padding: 12, textAlign: 'right', fontWeight: 700 }}>{fmt(r.tv)}</td>
+                          <td style={{ padding: '15px 20px', textAlign: 'center', fontWeight: 800, color: C.teal, fontSize: 16 }}>{Math.round(r.alumsEstimados)}</td>
+                          <td style={{ padding: '15px 20px', textAlign: 'right', fontWeight: 800, color: C.navy }}>{fmt(r.tv)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -711,19 +729,19 @@ export default function App() {
               </div>
             )}
 
-            {/* 4. EDITORIALES (Ahora todos pueden verla y jugar con ella) */}
+            {/* 4. EDITORIALES Y RAPPEL (Para que el colegio simule) */}
             {tab === 'editoriales' && (
               <div style={{...sty.card, animation: 'fadeIn 0.3s'}}>
-                <h3 style={{ marginTop: 0, fontSize: 22, color: C.navy }}>Descuentos y Rappel por Editorial</h3>
-                <p style={{ fontSize: 15, color: C.slate, marginBottom: 25 }}>Compara los descuentos negociados por el colegio con los de nuestra central de compras para descubrir el Rappel que te devolvemos.</p>
-                <div style={{ overflowX: 'auto', borderRadius: 8, border: `1px solid ${C.muted}` }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-                    <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 10 }}>
-                      <tr style={{ textAlign: 'left', borderBottom: `2px solid ${C.muted}` }}>
-                        <th style={{ padding: 15 }}>Proveedor</th>
-                        <th style={{ padding: 15, textAlign: 'center' }}>Descuento La Tienda del Cole</th>
-                        <th style={{ padding: 15, textAlign: 'center', color: C.teal }}>Tu Descuento Actual</th>
-                        <th style={{ padding: 15, textAlign: 'right', color: C.coral }}>Rappel Generado a tu favor</th>
+                <h3 style={{ marginTop: 0, fontSize: 24, color: C.navy, fontWeight: 800, letterSpacing: '-0.5px' }}>Descuentos y Rappel por Editorial</h3>
+                <p style={{ fontSize: 16, color: C.slate, marginBottom: 30, lineHeight: 1.6 }}>Compara los descuentos negociados por tu colegio con los de nuestra central de compras. Introduce tus márgenes actuales y descubre el Rappel (Beneficio) extra que te devolvemos.</p>
+                <div style={{ overflowX: 'auto', borderRadius: 12, border: `1px solid ${C.muted}`, boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15 }}>
+                    <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 10, boxShadow: '0 1px 0 rgba(0,0,0,0.05)' }}>
+                      <tr style={{ textAlign: 'left' }}>
+                        <th style={{ padding: '20px 25px', color: C.slate, fontWeight: 700 }}>Proveedor Principal</th>
+                        <th style={{ padding: '20px 25px', textAlign: 'center', color: C.slate, fontWeight: 700 }}>DTO {BRAND.name}</th>
+                        <th style={{ padding: '20px 25px', textAlign: 'center', color: C.teal, fontWeight: 800 }}>Tu Descuento Actual</th>
+                        <th style={{ padding: '20px 25px', textAlign: 'right', color: C.coral, fontWeight: 800 }}>Rappel a tu favor</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -732,16 +750,16 @@ export default function App() {
                         const dif = d.col > d.scho;
                         const provCalc = calc.prov.find(p => p.p === prov);
                         return (
-                          <tr key={i} style={{ borderBottom: '1px solid #eee', background: i % 2 === 0 ? '#fff' : '#fcfcfc' }}>
-                            <td style={{ padding: 15, fontWeight: 600 }}>{sh(prov)}</td>
-                            <td style={{ padding: 15, textAlign: 'center', color: C.slate, fontWeight: 500 }}>{d.scho}%</td>
-                            <td style={{ padding: 15, textAlign: 'center' }}>
-                              <div style={{ display: 'inline-flex', alignItems: 'center', background: '#fff', border: `2px solid ${dif ? C.teal : C.muted}`, borderRadius: 8, padding: '4px 10px', boxShadow: dif ? `0 0 0 3px ${C.teal}22` : 'none', transition: 'all 0.2s' }}>
-                                <input type="number" value={d.col} onChange={e => setColDtos(p => ({ ...p, [prov]: { ...p[prov], col: +e.target.value } }))} style={{ width: 50, border: 'none', outline: 'none', textAlign: 'center', fontWeight: 'bold', fontSize: 16, color: dif ? C.teal : C.ink, background: 'transparent' }} />
-                                <span style={{ fontWeight: 'bold', color: dif ? C.teal : C.slate }}>%</span>
+                          <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fcfcfc', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#f0fdfa'} onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#fcfcfc'}>
+                            <td style={{ padding: '20px 25px', fontWeight: 700, color: C.navy }}>{sh(prov)}</td>
+                            <td style={{ padding: '20px 25px', textAlign: 'center', color: C.slate, fontWeight: 600 }}>{d.scho}%</td>
+                            <td style={{ padding: '20px 25px', textAlign: 'center' }}>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', background: '#fff', border: `2px solid ${dif ? C.teal : C.muted}`, borderRadius: 10, padding: '6px 12px', boxShadow: dif ? `0 0 0 4px ${C.teal}22` : '0 1px 2px rgba(0,0,0,0.05)', transition: 'all 0.2s' }}>
+                                <input type="number" value={d.col} onChange={e => setColDtos(p => ({ ...p, [prov]: { ...p[prov], col: +e.target.value } }))} style={{ width: 55, border: 'none', outline: 'none', textAlign: 'center', fontWeight: '800', fontSize: 18, color: dif ? C.teal : C.navy, background: 'transparent' }} />
+                                <span style={{ fontWeight: '800', color: dif ? C.teal : C.slate }}>%</span>
                               </div>
                             </td>
-                            <td style={{ padding: 15, textAlign: 'right', fontWeight: 800, color: (provCalc?.rap || 0) > 0 ? C.coral : C.slate, fontSize: 16 }}>
+                            <td style={{ padding: '20px 25px', textAlign: 'right', fontWeight: 800, color: (provCalc?.rap || 0) > 0 ? C.coral : C.slate, fontSize: 18 }}>
                               {fmt(provCalc?.rap || 0)}
                             </td>
                           </tr>
@@ -757,41 +775,38 @@ export default function App() {
       </div>
 
       {/* FOOTER CORPORATIVO */}
-      <div style={{ background: '#ffffff', borderTop: '1px solid #e9ecf1', padding: '40px 20px', marginTop: 'auto' }}>
+      <div style={{ background: '#ffffff', borderTop: '1px solid #e2e8f0', padding: '50px 20px 40px', marginTop: 'auto' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', background: '#ffffff', border: '1px solid #f1f1f1', borderRadius: 16, padding: '25px', gap: 35, boxShadow: '0 8px 25px rgba(0,0,0,0.03)' }}>
-            <div style={{ borderRight: '1px solid #f1f1f1', paddingRight: 35 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', background: '#ffffff', border: '1px solid #f1f5f9', borderRadius: 20, padding: '30px', gap: 40, boxShadow: '0 10px 25px rgba(0,0,0,0.02)' }}>
+            <div style={{ borderRight: '1px solid #f1f5f9', paddingRight: 40 }}>
               <a href="https://www.scholarum.es" target="_blank" rel="noreferrer">
                 <img src="https://www.scholarum.es/wp-content/uploads/footer/logo-scholarum.svg" alt="Scholarum" style={{ height: 45 }} />
               </a>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 30, alignItems: 'center', justifyContent: 'center' }}>
-              <LogoHoverLink href="https://somosdeliber.com" src="https://www.scholarum.es/wp-content/uploads/footer/logo-deliber.svg" height={28} />
-              <LogoHoverLink href="https://zonacoles.es/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-zonacoles.svg" height={32} />
-              <LogoHoverLink href="https://zonafp.com/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-zonafp.svg" height={25} />
-              <LogoHoverLink href="https://lareddual.com/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-lareddual.svg" height={28} />
-              <LogoHoverLink href="https://laferiadeloscolegios.com/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-laferiadeloscolegios.svg" height={28} />
-              <LogoHoverLink href="https://yoin.es/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-yoin.svg" height={25} />
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 35, alignItems: 'center', justifyContent: 'center' }}>
+              <LogoHoverLink href="https://somosdeliber.com" src="https://www.scholarum.es/wp-content/uploads/footer/logo-deliber.svg" height={30} />
+              <LogoHoverLink href="https://zonacoles.es/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-zonacoles.svg" height={34} />
+              <LogoHoverLink href="https://zonafp.com/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-zonafp.svg" height={26} />
+              <LogoHoverLink href="https://lareddual.com/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-lareddual.svg" height={30} />
+              <LogoHoverLink href="https://laferiadeloscolegios.com/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-laferiadeloscolegios.svg" height={30} />
+              <LogoHoverLink href="https://yoin.es/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-yoin.svg" height={26} />
             </div>
           </div>
-          <p style={{ textAlign: 'center', color: C.slate, fontSize: 13, marginTop: 25 }}>
+          <p style={{ textAlign: 'center', color: C.slate, fontSize: 14, marginTop: 30, fontWeight: 500 }}>
             © Copyright {new Date().getFullYear()} | Scholarum Educación. Todos los derechos reservados.
           </p>
         </div>
       </div>
-      <style>{`
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-      `}</style>
     </div>
   );
 }
 
 function KPI({ label, value, sub, icon, accent, color }) {
   return (
-    <div style={{ background: accent ? `linear-gradient(135deg, ${C.teal}, ${C.blue})` : C.card, padding: '25px', borderRadius: 16, boxShadow: '0 8px 25px rgba(0,0,0,0.04)', color: accent ? '#fff' : (color || C.ink), border: accent ? 'none' : `1px solid ${C.muted}`, position: 'relative', overflow: 'hidden', transition: 'transform 0.2s', cursor: 'default' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-3px)'} onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
-      <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>{icon && <span style={{fontSize: 18}}>{icon}</span>} {label}</div>
-      <div style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.5px' }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6, fontWeight: 500 }}>{sub}</div>}
+    <div style={{ background: accent ? `linear-gradient(135deg, ${C.teal}, ${C.blue})` : C.card, padding: '25px 30px', borderRadius: 20, boxShadow: accent ? '0 10px 25px -5px rgba(13,148,136,0.3)' : '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05), 0 0 0 1px rgba(15,23,42,0.03)', color: accent ? '#fff' : (color || C.ink), position: 'relative', overflow: 'hidden', transition: 'transform 0.2s', cursor: 'default' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-3px)'} onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
+      <div style={{ fontSize: 15, opacity: 0.85, marginBottom: 10, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10 }}>{icon && <span style={{fontSize: 20}}>{icon}</span>} {label}</div>
+      <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-1px' }}>{value}</div>
+      {sub && <div style={{ fontSize: 13, opacity: 0.75, marginTop: 8, fontWeight: 500 }}>{sub}</div>}
     </div>
   );
 }
@@ -800,7 +815,7 @@ function LogoHoverLink({ href, src, height }) {
   const [hover, setHover] = useState(false);
   return (
     <a href={href} target="_blank" rel="noreferrer" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      <img src={src} alt="Brand" style={{ height: height, filter: hover ? 'grayscale(0)' : 'grayscale(1)', opacity: hover ? 1 : 0.7, transition: 'all 0.3s ease', cursor: 'pointer', display: 'block' }} />
+      <img src={src} alt="Brand" style={{ height: height, filter: hover ? 'grayscale(0)' : 'grayscale(1)', opacity: hover ? 1 : 0.6, transition: 'all 0.3s ease', cursor: 'pointer', display: 'block' }} />
     </a>
   );
 }
