@@ -23,18 +23,28 @@ const C = {
 const fmt = n => n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 const sh = p => (p || '').replace(/Comercial (de ediciones |Grupo )/g, '').replace(/ S\.A\.U?\./g, '').replace(/ SL$/,'').replace(/ S\.L\.U?\./g,'').replace(/Ediciones /,'').replace(/Editorial /,'');
 
+// ── SMART PARSER (Corregido el bucle infinito) ──
 function parseInput(text) {
   const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean);
   const entries = [];
   const isbnRe = /97[89]\d{10}/g;
+  
   for (const line of lines) {
     const isbns = line.match(isbnRe);
     if (!isbns) continue;
+    
     let cleanLine = line;
     isbns.forEach(i => { cleanLine = cleanLine.replace(i, ' '); });
+    
     const numbers = [];
+    // ¡LA CLAVE ESTÁ AQUÍ! La regla debe definirse FUERA del bucle
+    const numRe = /\b(\d{1,3})\b/g; 
     let m;
-    while ((m = /\b(\d{1,3})\b/g.exec(cleanLine)) !== null) if (m[1] > 0 && m[1] < 1000) numbers.push(parseInt(m[1]));
+    
+    while ((m = numRe.exec(cleanLine)) !== null) {
+      if (m[1] > 0 && m[1] < 1000) numbers.push(parseInt(m[1]));
+    }
+    
     for (let idx = 0; idx < isbns.length; idx++) {
       const isbn = isbns[idx];
       const alumnos = idx < numbers.length ? numbers[idx] : (numbers.length === 1 ? numbers[0] : 0);
