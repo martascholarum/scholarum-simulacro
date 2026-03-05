@@ -20,7 +20,7 @@ const BRAND = {
 // ════════════════════════════════════════════════════════════════════
 const COMMERCIAL_PIN = "1234"; // PIN MAESTRO COMERCIAL
 const API = "https://script.google.com/macros/s/AKfycbwCYoLIusztmA7AXeEx8HnVprZoQJFMW-vIslvmgFNdvzt_NoY5d8w9nNOLP2btQ0b0/exec";
-const N8N_WEBHOOK_URL = ""; 
+const N8N_WEBHOOK_URL = "https://scholarumdigital.app.n8n.cloud/webhook-test/0c901ba1-fd9e-4a10-91f0-c5b612249163"; 
 
 const C = {
   ink: '#0c1e30', navy: '#122d47', blue: BRAND.primary, teal: BRAND.secondary, 
@@ -78,9 +78,8 @@ async function apiCall(action, params = {}) {
   }
 }
 
-// Generador de PIN Alfanumérico (6 caracteres)
 function generatePIN() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Quitamos O,0,1,I para evitar confusiones
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let pin = '';
   for (let i = 0; i < 6; i++) pin += chars.charAt(Math.floor(Math.random() * chars.length));
   return pin;
@@ -93,7 +92,7 @@ export default function App() {
   const [nombre, setNombre] = useState('');
   const [responsable, setResponsable] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
-  const [pin, setPin] = useState(''); // Se generará al cruzar los datos
+  const [pin, setPin] = useState(''); 
   const [pinInput, setPinInput] = useState(''); 
   const [isAuthenticated, setIsAuthenticated] = useState(false); 
   
@@ -113,7 +112,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [webhookSent, setWebhookSent] = useState(false); 
-  const [showMissing, setShowMissing] = useState(false); // Toggle para ver los ISBNs faltantes
+  const [showMissing, setShowMissing] = useState(false); 
   const fileRef = useRef(null);
 
   const isC = viewMode === 'comercial';
@@ -124,7 +123,7 @@ export default function App() {
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
-    const id = p.get('id'), ref = p.get('ref'); // ref=client o ref=admin
+    const id = p.get('id'), ref = p.get('ref'); 
     
     if (id) {
       setLoadingMsg('Verificando acceso seguro...');
@@ -149,10 +148,10 @@ export default function App() {
           setTab(isClient ? 'propuesta' : 'resumen'); 
           
           if (isClient) {
-            if (meta.pin) setStep(99); // Pide PIN cliente
+            if (meta.pin) setStep(99); 
             else { setIsAuthenticated(true); setStep(3); }
           } else {
-            setStep(98); // Pide PIN Comercial Maestro
+            setStep(98); 
           }
         })
         .catch(e => { setError(e.message); setStep(0); })
@@ -183,7 +182,6 @@ export default function App() {
     const entries = parseInput(inputText);
     if (!entries.length) { setError('No se detectaron ISBNs válidos.'); return; }
     
-    // Generar PIN en este momento si no existe
     const newPin = pin || generatePIN();
     if(!pin) setPin(newPin);
 
@@ -224,8 +222,8 @@ export default function App() {
       if (r.error) throw new Error(r.error);
       
       const base = `${window.location.origin}${window.location.pathname}?id=${r.id}`;
-      setShareUrl(`${base}&ref=client`); // Enlace Cliente Ofuscado
-      setCommercialUrl(`${base}&ref=admin`); // Enlace Admin Ofuscado
+      setShareUrl(`${base}&ref=client`); 
+      setCommercialUrl(`${base}&ref=admin`); 
     } catch (e) { alert('Error: ' + e.message); }
     finally { setSaving(false); }
   }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable, pin, notFoundList]);
@@ -306,33 +304,48 @@ export default function App() {
     btn2: { padding: '10px 20px', borderRadius: 8, border: `2px dashed ${C.blue}`, background: 'transparent', color: C.blue, cursor: 'pointer', fontWeight: 600 }
   };
 
+  // ─────────────────────────────────────────────────────────
+  // AQUÍ EMPIEZA EL RETURN CON LA CABECERA MEJORADA
+  // ─────────────────────────────────────────────────────────
   return (
     <div style={{ background: C.light, minHeight: '100vh', fontFamily: 'Outfit, sans-serif', color: C.ink, display: 'flex', flexDirection: 'column' }}>
-      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
+      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
       
-      <div style={{ background: `linear-gradient(135deg, ${C.navy}, ${C.blue})`, padding: '20px 40px', color: '#fff', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
+      {/* HEADER CORPORATIVO (Efecto Glassmorphism + Sticky) */}
+      <div style={{ 
+        position: 'sticky', top: 0, zIndex: 100,
+        background: `rgba(27, 107, 147, 0.95)`, 
+        backdropFilter: 'blur(10px)', 
+        WebkitBackdropFilter: 'blur(10px)',
+        padding: '16px 40px', color: '#fff', 
+        boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+        borderBottom: '1px solid rgba(255,255,255,0.1)'
+      }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
             {BRAND.companyLogo ? (
-              <img src={BRAND.companyLogo} alt={BRAND.name} style={{ height: 40, objectFit: 'contain', background: '#fff', padding: 5, borderRadius: 8 }} />
+              <div style={{ background: '#fff', padding: '6px 10px', borderRadius: 10, boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
+                <img src={BRAND.companyLogo} alt={BRAND.name} style={{ height: 35, objectFit: 'contain', display: 'block' }} />
+              </div>
             ) : (
-              <div style={{ background: '#fff', color: C.blue, fontWeight: 900, fontSize: 20, padding: '5px 12px', borderRadius: 8 }}>D.</div>
+              <div style={{ background: 'linear-gradient(135deg, #fff, #f0f0f0)', color: C.blue, fontWeight: 900, fontSize: 20, padding: '6px 14px', borderRadius: 10, boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>D.</div>
             )}
             <div>
-              <div style={{ fontSize: 11, letterSpacing: 3, fontWeight: 700, opacity: 0.8 }}>{BRAND.name} EDUCACIÓN</div>
-              <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{nombre ? `Propuesta: ${nombre}` : "Portal Comercial"}</h1>
+              <div style={{ fontSize: 10, letterSpacing: 4, fontWeight: 700, color: C.gold, textTransform: 'uppercase', marginBottom: 2 }}>{BRAND.name} EDUCACIÓN</div>
+              <h1 style={{ margin: 0, fontSize: 17, fontWeight: 600, letterSpacing: '-0.3px' }}>{nombre ? `Propuesta: ${nombre}` : "Portal Comercial"}</h1>
             </div>
           </div>
+          
           {isAuthenticated && step >= 2 && step !== 3 && (
-            <div style={{ display: 'flex', background: 'rgba(255,255,255,0.1)', padding: 4, borderRadius: 8 }}>
-              <button onClick={() => setViewMode('comercial')} style={{ padding: '6px 14px', border: 'none', borderRadius: 6, background: isC ? '#fff' : 'transparent', color: isC ? C.blue : '#fff', fontWeight: 700, cursor: 'pointer' }}>🔧 Vista Interna</button>
-              <button onClick={() => setViewMode('colegio')} style={{ padding: '6px 14px', border: 'none', borderRadius: 6, background: !isC ? '#fff' : 'transparent', color: !isC ? C.blue : '#fff', fontWeight: 700, cursor: 'pointer' }}>🏫 Vista Cliente</button>
+            <div style={{ display: 'flex', background: 'rgba(0,0,0,0.2)', padding: 5, borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
+              <button onClick={() => setViewMode('comercial')} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: isC ? '#fff' : 'transparent', color: isC ? C.blue : '#fff', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', fontSize: 13 }}>🔧 Comercial</button>
+              <button onClick={() => setViewMode('colegio')} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: !isC ? '#fff' : 'transparent', color: !isC ? C.blue : '#fff', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', fontSize: 13 }}>🏫 Vista Cliente</button>
             </div>
           )}
         </div>
       </div>
 
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '30px 20px', flex: 1, width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 20px', flex: 1, width: '100%', boxSizing: 'border-box' }}>
         
         {step === 98 && (
           <div style={{ ...sty.card, maxWidth: 450, margin: '80px auto', textAlign: 'center', borderTop: `5px solid ${C.blue}` }}>
@@ -402,7 +415,6 @@ export default function App() {
 
         {isAuthenticated && (step === 2 || step === 3) && calc && (
           <>
-            {/* PANEL DE ALERTA DE ISBN FALTANTES SIEMPRE VISIBLE PARA EL COMERCIAL */}
             {isC && notFoundList.length > 0 && (
               <div style={{ background: '#fef2f0', border: `1px solid ${C.coral}`, borderRadius: 12, padding: '20px 25px', marginBottom: 25 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 15 }}>
@@ -480,26 +492,44 @@ export default function App() {
               {isC && <button onClick={() => setTab('editoriales')} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'editoriales' ? C.blue : '#fff', color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>Editoriales y Rappel</button>}
             </div>
 
-            {/* 1. PROPUESTA (NIVEL DIOS - CLIENTE) */}
+            {/* HERO SECTION DE LA PROPUESTA (Efecto Textura y Elevación) */}
             {!isC && tab === 'propuesta' && (
-              <div style={{ animation: 'fadeIn 0.5s ease-in' }}>
-                
-                {/* 1. HERO Y CONTEXTO */}
-                <div style={{ background: `linear-gradient(135deg, ${C.navy}, ${C.blue})`, borderRadius: 16, padding: '50px 40px', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 30, marginBottom: 30, boxShadow: '0 10px 30px rgba(27, 107, 147, 0.2)' }}>
-                  <div style={{ flex: 1, minWidth: 300 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: 2, opacity: 0.8, marginBottom: 10, textTransform: 'uppercase' }}>Propuesta de colaboración</div>
-                    <h2 style={{ margin: '0 0 15px 0', fontSize: 38, lineHeight: 1.2 }}>Hazlo fácil con {BRAND.name}</h2>
-                    {responsable && <p style={{ fontSize: 18, opacity: 0.9, margin: '0 0 15px 0', borderLeft: `3px solid ${C.gold}`, paddingLeft: 10 }}>A la atención de: <strong>{responsable} ({nombre})</strong></p>}
-                    <p style={{ fontSize: 16, opacity: 0.8, maxWidth: 600, margin: 0, lineHeight: 1.6 }}>Imagina tener una tienda online propia del colegio, desde donde vender todo lo necesario para el curso escolar sin complicaciones. Simplificando los procesos para las familias y aumentando la rentabilidad del colegio.</p>
+              <div style={{ animation: 'fadeIn 0.6s ease-out' }}>
+                <div style={{ 
+                  background: `linear-gradient(135deg, ${C.navy} 0%, ${C.blue} 100%)`, 
+                  position: 'relative', overflow: 'hidden',
+                  borderRadius: 24, padding: '60px 50px', color: '#fff', 
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+                  flexWrap: 'wrap', gap: 40, marginBottom: 40, 
+                  boxShadow: '0 20px 40px rgba(27, 107, 147, 0.25), 0 1px 3px rgba(255,255,255,0.1) inset' 
+                }}>
+                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px)', backgroundSize: '24px 24px', opacity: 0.5, pointerEvents: 'none' }}></div>
+                  
+                  <div style={{ flex: 1, minWidth: 320, position: 'relative', zIndex: 1 }}>
+                    <div style={{ display: 'inline-block', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', padding: '6px 14px', borderRadius: 30, fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 20, backdropFilter: 'blur(5px)' }}>
+                      ✨ Propuesta Exclusiva
+                    </div>
+                    
+                    <h2 style={{ margin: '0 0 20px 0', fontSize: 46, lineHeight: 1.1, fontWeight: 800, letterSpacing: '-1px' }}>Hazlo fácil con {BRAND.name}</h2>
+                    
+                    {responsable && (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '8px 16px', borderRadius: 8, marginBottom: 25, borderLeft: `4px solid ${C.gold}` }}>
+                        <span style={{ fontSize: 15, opacity: 0.9 }}>Para: <strong>{responsable} ({nombre})</strong></span>
+                      </div>
+                    )}
+                    
+                    <p style={{ fontSize: 17, opacity: 0.85, maxWidth: 650, margin: 0, lineHeight: 1.6, fontWeight: 400 }}>Imagina tener una tienda online propia del colegio, desde donde vender todo lo necesario para el curso escolar sin complicaciones. Simplificando los procesos para las familias y aumentando la rentabilidad de tu centro.</p>
                   </div>
+
                   {logoUrl && (
-                    <div style={{ background: '#fff', padding: 15, borderRadius: '50%', width: 140, height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
-                      <img src={logoUrl} alt="Logo Colegio" style={{ maxWidth: '90%', maxHeight: '90%', objectFit: 'contain' }} onError={(e) => e.target.style.display='none'} />
+                    <div style={{ position: 'relative', zIndex: 1 }}>
+                      <div style={{ background: '#fff', padding: 25, borderRadius: '50%', width: 160, height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 15px 35px rgba(0,0,0,0.2), 0 0 0 8px rgba(255,255,255,0.1)' }}>
+                        <img src={logoUrl} alt="Logo Colegio" style={{ maxWidth: '85%', maxHeight: '85%', objectFit: 'contain', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.05))' }} onError={(e) => e.target.style.display='none'} />
+                      </div>
                     </div>
                   )}
                 </div>
 
-                {/* 2. CALCULADORA: PROCESO RENTABLE PARA EL COLEGIO */}
                 <h3 style={{ fontSize: 28, color: C.navy, textAlign: 'center', marginTop: 50, marginBottom: 10 }}>Proceso rentable para el colegio</h3>
                 <p style={{ textAlign: 'center', color: C.slate, maxWidth: 800, margin: '0 auto 30px', fontSize: 16 }}>Cada venta en la tienda online se traduce en ingresos para tu centro. Un dinero que podrás invertir en modernizar aulas o mejorar instalaciones.</p>
                 
@@ -528,7 +558,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 3. NOS ENCARGAMOS DE TODO */}
                 <h3 style={{ fontSize: 28, color: C.navy, textAlign: 'center', marginTop: 60, marginBottom: 10 }}>Nosotros nos encargamos de todo</h3>
                 <p style={{ textAlign: 'center', color: C.slate, maxWidth: 800, margin: '0 auto 40px', fontSize: 16 }}>Tendrás a un especialista que guía al colegio y un equipo de atención al cliente para las familias. Vende libros, licencias, material, uniformes y más.</p>
                 
@@ -550,7 +579,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 4. CÓMO FUNCIONA */}
                 <div style={{ background: '#fff', borderRadius: 16, padding: 40, border: `1px solid ${C.muted}`, marginBottom: 50 }}>
                   <h3 style={{ fontSize: 24, color: C.navy, marginTop: 0, marginBottom: 30, textAlign: 'center' }}>¿Cómo funciona para el colegio?</h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -569,7 +597,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 5. PROCESO SENCILLO FAMILIAS */}
                 <div style={{ background: `linear-gradient(135deg, ${C.teal}10, ${C.blue}10)`, borderRadius: 16, padding: 40, border: `1px solid ${C.teal}33` }}>
                   <h3 style={{ fontSize: 24, color: C.teal, marginTop: 0, marginBottom: 30, textAlign: 'center' }}>Un proceso sencillo para las familias</h3>
                   
@@ -594,7 +621,6 @@ export default function App() {
               </div>
             )}
 
-            {/* 2. RESUMEN */}
             {tab === 'resumen' && (
               <div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15, marginBottom: 25 }}>
@@ -626,10 +652,10 @@ export default function App() {
                     </ResponsiveContainer>
                   </div>
                 </div>
+                <p style={{ fontSize: 12, color: C.slate, fontStyle: 'italic', textAlign: 'center' }}>* Datos aproximados. Sujeto a variaciones finales de compra y actualización de tarifas anuales.</p>
               </div>
             )}
 
-            {/* 3. DETALLE */}
             {tab === 'detalle' && (
               <div style={sty.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -669,7 +695,6 @@ export default function App() {
               </div>
             )}
 
-            {/* 4. EDITORIALES (Solo Comercial) */}
             {tab === 'editoriales' && isC && (
               <div style={sty.card}>
                 <h3 style={{ marginTop: 0 }}>Descuentos y Rappel por Editorial</h3>
@@ -707,7 +732,6 @@ export default function App() {
         )}
       </div>
 
-      {/* FOOTER CORPORATIVO */}
       <div style={{ background: '#ffffff', borderTop: '1px solid #e9ecf1', padding: '40px 20px', marginTop: 'auto' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', background: '#ffffff', border: '1px solid #f1f1f1', borderRadius: 15, padding: '20px', gap: 30, boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
