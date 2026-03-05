@@ -7,6 +7,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 const BRAND = {
   name: "DELIBER",
   companyLogo: "https://www.scholarum.es/wp-content/uploads/footer/logo-deliber.svg", 
+  favicon: "https://somosdeliber.com/wp-content/uploads/favicon-1.png", // Favicon añadido
   primary: "#1b6b93",    
   secondary: "#00897b",  
   accent: "#e5a100",     
@@ -14,6 +15,10 @@ const BRAND = {
   card: "#ffffff"        
 };
 
+// ════════════════════════════════════════════════════════════════════
+// 2. 🔐 SEGURIDAD Y CONEXIONES
+// ════════════════════════════════════════════════════════════════════
+const COMMERCIAL_PIN = "1234"; // PIN MAESTRO COMERCIAL
 const API = "https://script.google.com/macros/s/AKfycbwCYoLIusztmA7AXeEx8HnVprZoQJFMW-vIslvmgFNdvzt_NoY5d8w9nNOLP2btQ0b0/exec";
 const N8N_WEBHOOK_URL = ""; 
 
@@ -27,6 +32,18 @@ const C = {
 const fmt = n => (parseFloat(n) || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 const sh = p => (p || '').replace(/Comercial (de ediciones |Grupo )/g, '').replace(/ S\.A\.U?\./g, '').replace(/ SL$/,'').replace(/ S\.L\.U?\./g,'').replace(/Ediciones /,'').replace(/Editorial /,'');
 
+// Inyector de Favicon y Título
+function setFavicon() {
+  document.title = `${BRAND.name} Educación | Propuestas`;
+  let link = document.querySelector("link[rel~='icon']");
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    document.head.appendChild(link);
+  }
+  link.href = BRAND.favicon;
+}
+
 function parseInput(text) {
   const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean);
   const entries = [];
@@ -37,8 +54,8 @@ function parseInput(text) {
     let cleanLine = line;
     isbns.forEach(i => { cleanLine = cleanLine.replace(i, ' '); });
     const numbers = [];
-    let m;
     const numRe = /\b(\d{1,3})\b/g;
+    let m;
     while ((m = numRe.exec(cleanLine)) !== null) if (m[1] > 0 && m[1] < 1000) numbers.push(parseInt(m[1]));
     for (let idx = 0; idx < isbns.length; idx++) {
       const isbn = isbns[idx];
@@ -66,15 +83,16 @@ async function apiCall(action, params = {}) {
 }
 
 export default function App() {
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(0); 
   const [loadingMsg, setLoadingMsg] = useState('Cargando...');
   
   const [nombre, setNombre] = useState('');
   const [responsable, setResponsable] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
-  const [pin, setPin] = useState(''); // PIN de seguridad
-  const [pinInput, setPinInput] = useState(''); // Lo que teclea el usuario al entrar
-  const [isAuthenticated, setIsAuthenticated] = useState(false); // ¿Ha metido el PIN correcto?
+  // Generamos PIN aleatorio por defecto
+  const [pin, setPin] = useState(() => Math.floor(1000 + Math.random() * 9000).toString()); 
+  const [pinInput, setPinInput] = useState(''); 
+  const [isAuthenticated, setIsAuthenticated] = useState(false); 
   
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -88,16 +106,18 @@ export default function App() {
   const [tab, setTab] = useState('resumen');
   const [viewMode, setViewMode] = useState('comercial');
   const [shareUrl, setShareUrl] = useState('');
+  const [commercialUrl, setCommercialUrl] = useState(''); // Nueva URL para editar
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [webhookSent, setWebhookSent] = useState(false); 
   const fileRef = useRef(null);
 
   const isC = viewMode === 'comercial';
+  const notFoundList = editableData?.meta?.notFound || data?.notFound || []; // Lista blindada de ignorados
 
+  useEffect(() => { setFavicon(); }, []);
   useEffect(() => { if (isC && tab === 'propuesta') setTab('resumen'); }, [isC, tab]);
 
-  // Carga inicial por URL
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const id = p.get('id'), modo = p.get('modo');
@@ -112,45 +132,50 @@ export default function App() {
           setCostePapel(parseFloat(res.costeOp) || 12); 
           setCosteDigital(parseFloat(res.costeOpDigital) || 10);
           setProbabilidad(parseFloat(res.prob) || 100);
+          setColDtos(res.condiciones || {});
           
-          const loadedDtos = { ...(res.condiciones || {}) };
-          if (loadedDtos._meta) {
-            setLogoUrl(loadedDtos._meta.logoUrl || '');
-            setResponsable(loadedDtos._meta.responsable || '');
-            setPin(loadedDtos._meta.pin || ''); // Cargamos el PIN guardado
-            delete loadedDtos._meta;
-          }
-          setColDtos(loadedDtos);
+          // Leer la meta incrustada en datos (A prueba de borrado)
+          const meta = res.datos?.meta || {};
+          setLogoUrl(meta.logoUrl || '');
+          setResponsable(meta.responsable || '');
+          if(meta.pin) setPin(meta.pin);
           
           setViewMode(modo === 'colegio' ? 'colegio' : 'comercial');
           setTab(modo === 'colegio' ? 'propuesta' : 'resumen'); 
           
-          // Si no hay PIN o ya lo sabíamos, pasamos. Si no, pedimos contraseña.
-          if (!loadedDtos._meta?.pin) {
-            setIsAuthenticated(true);
-            setStep(modo === 'colegio' ? 3 : 2);
+          if (modo === 'colegio') {
+            if (meta.pin) setStep(99);
+            else { setIsAuthenticated(true); setStep(3); }
           } else {
-            setStep(99); // Paso 99 es la pantalla de bloqueo
+            // Si es URL comercial, pide PIN maestro
+            setStep(98);
           }
         })
         .catch(e => { setError(e.message); setStep(0); })
         .finally(() => setLoading(false));
     } else {
-      setIsAuthenticated(true); // Modo creación, no pide PIN
+      setIsAuthenticated(false); 
+      setStep(98); // Pantalla inicial pide PIN comercial
     }
   }, []);
 
   const handleLogin = () => {
-    if (pinInput === pin) {
-      setIsAuthenticated(true);
-      setStep(viewMode === 'colegio' ? 3 : 2);
-    } else {
-      alert("Contraseña incorrecta. Por favor, contacta con tu asesor comercial.");
+    if (step === 98) {
+      if (pinInput === COMMERCIAL_PIN) {
+        setIsAuthenticated(true);
+        setStep(viewMode === 'colegio' ? 3 : (data ? 2 : 0));
+        setPinInput('');
+      } else alert("PIN Comercial incorrecto.");
+    } else if (step === 99) {
+      if (pinInput === pin) {
+        setIsAuthenticated(true);
+        setStep(3);
+        setPinInput('');
+      } else alert("PIN incorrecto. Contacta con tu asesor.");
     }
   };
 
   const handleCruzar = useCallback(async () => {
-    if (!pin || pin.length < 4) { setError('Debes establecer un PIN de al menos 4 caracteres por seguridad.'); return; }
     const entries = parseInput(inputText);
     if (!entries.length) { setError('No se detectaron ISBNs válidos.'); return; }
     
@@ -160,7 +185,10 @@ export default function App() {
       const isbnStr = entries.map(e => `${e.isbn}:${e.alumnos}`).join(',');
       const r = await apiCall('cruzar', { isbns: isbnStr });
       if (r.error) throw new Error(r.error);
-      setData(r); setEditableData(r);
+      
+      // Guardamos en un objeto seguro los faltantes para que no se pierdan
+      const datosCompletos = { ...r, meta: { notFound: r.notFound } };
+      setData(datosCompletos); setEditableData(datosCompletos);
       
       const dtos = {};
       r.found.forEach(b => {
@@ -179,26 +207,28 @@ export default function App() {
 
     } catch (e) { setError(e.message); setStep(0); }
     finally { setLoading(false); }
-  }, [inputText, pin]);
+  }, [inputText]);
 
   const handleGuardar = useCallback(async () => {
     if (!editableData) return; setSaving(true);
     try {
-      // Guardamos el PIN junto al logo en los metadatos
-      const dtosConMeta = { ...colDtos, _meta: { logoUrl, responsable, pin } };
-      const saveData = { nombre, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: dtosConMeta, datos: editableData };
+      // Metemos los datos extra directamente en 'datos' para que el backend no los corte
+      const datosSeguros = { ...editableData, meta: { logoUrl, responsable, pin, notFound: notFoundList } };
+      const saveData = { nombre, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: colDtos, datos: datosSeguros };
       const r = await apiCall('guardar', { data: saveData });
       if (r.error) throw new Error(r.error);
-      const url = `${window.location.origin}${window.location.pathname}?id=${r.id}&modo=colegio`;
-      setShareUrl(url);
+      
+      const base = `${window.location.origin}${window.location.pathname}?id=${r.id}`;
+      setShareUrl(`${base}&modo=colegio`);
+      setCommercialUrl(`${base}&modo=comercial`);
     } catch (e) { alert('Error: ' + e.message); }
     finally { setSaving(false); }
-  }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable, pin]);
+  }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable, pin, notFoundList]);
 
   const handleSendWebhook = async () => {
     if(!N8N_WEBHOOK_URL) { alert("Añade la URL de tu Webhook de n8n en el código."); return; }
     try {
-      await fetch(N8N_WEBHOOK_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ colegio: nombre, fecha: new Date().toISOString(), isbns: data.notFound }) });
+      await fetch(N8N_WEBHOOK_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ colegio: nombre, fecha: new Date().toISOString(), isbns: notFoundList }) });
       setWebhookSent(true);
     } catch (e) { alert("Hubo un error al enviar a n8n."); }
   };
@@ -275,23 +305,23 @@ export default function App() {
     <div style={{ background: C.light, minHeight: '100vh', fontFamily: 'Outfit, sans-serif', color: C.ink, display: 'flex', flexDirection: 'column' }}>
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
       
-      {/* CABECERA CORPORATIVA DE LA APP */}
+      {/* CABECERA CORPORATIVA */}
       <div style={{ background: `linear-gradient(135deg, ${C.navy}, ${C.blue})`, padding: '20px 40px', color: '#fff', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
             {BRAND.companyLogo ? (
               <img src={BRAND.companyLogo} alt={BRAND.name} style={{ height: 40, objectFit: 'contain', background: '#fff', padding: 5, borderRadius: 8 }} />
             ) : (
-              <div style={{ background: '#fff', color: C.blue, fontWeight: 900, fontSize: 20, padding: '5px 12px', borderRadius: 8, letterSpacing: -1 }}>D.</div>
+              <div style={{ background: '#fff', color: C.blue, fontWeight: 900, fontSize: 20, padding: '5px 12px', borderRadius: 8 }}>D.</div>
             )}
             <div>
               <div style={{ fontSize: 11, letterSpacing: 3, fontWeight: 700, opacity: 0.8 }}>{BRAND.name} EDUCACIÓN</div>
-              <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{nombre ? `Propuesta: ${nombre}` : "Portal Escolar"}</h1>
+              <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{nombre ? `Propuesta: ${nombre}` : "Portal Comercial"}</h1>
             </div>
           </div>
           {isAuthenticated && step >= 2 && step !== 3 && (
             <div style={{ display: 'flex', background: 'rgba(255,255,255,0.1)', padding: 4, borderRadius: 8 }}>
-              <button onClick={() => setViewMode('comercial')} style={{ padding: '6px 14px', border: 'none', borderRadius: 6, background: isC ? '#fff' : 'transparent', color: isC ? C.blue : '#fff', fontWeight: 700, cursor: 'pointer' }}>🔧 Comercial</button>
+              <button onClick={() => setViewMode('comercial')} style={{ padding: '6px 14px', border: 'none', borderRadius: 6, background: isC ? '#fff' : 'transparent', color: isC ? C.blue : '#fff', fontWeight: 700, cursor: 'pointer' }}>🔧 Vista Interna</button>
               <button onClick={() => setViewMode('colegio')} style={{ padding: '6px 14px', border: 'none', borderRadius: 6, background: !isC ? '#fff' : 'transparent', color: !isC ? C.blue : '#fff', fontWeight: 700, cursor: 'pointer' }}>🏫 Vista Cliente</button>
             </div>
           )}
@@ -300,28 +330,32 @@ export default function App() {
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '30px 20px', flex: 1, width: '100%', boxSizing: 'border-box' }}>
         
-        {/* PASO 99: PANTALLA DE LOGIN DE SEGURIDAD */}
-        {step === 99 && (
-          <div style={{ ...sty.card, maxWidth: 450, margin: '80px auto', textAlign: 'center' }}>
-            <div style={{ fontSize: 40, marginBottom: 15 }}>🔒</div>
-            <h2 style={{ color: C.navy, margin: '0 0 10px 0' }}>Propuesta Privada</h2>
-            <p style={{ color: C.slate, fontSize: 14, marginBottom: 25 }}>Por favor, introduce el PIN de acceso proporcionado por tu asesor comercial de {BRAND.name}.</p>
-            <input 
-              type="password" 
-              placeholder="••••" 
-              value={pinInput} 
-              onChange={e => setPinInput(e.target.value)} 
-              onKeyDown={e => e.key === 'Enter' && handleLogin()}
-              style={{ ...sty.input, textAlign: 'center', fontSize: 24, letterSpacing: 8, marginBottom: 20 }} 
-            />
-            <button onClick={handleLogin} style={{ ...sty.btn, width: '100%' }}>Acceder al Portal</button>
+        {/* LOGIN COMERCIAL MAESTRO */}
+        {step === 98 && (
+          <div style={{ ...sty.card, maxWidth: 450, margin: '80px auto', textAlign: 'center', borderTop: `5px solid ${C.blue}` }}>
+            <div style={{ fontSize: 40, marginBottom: 15 }}>🔐</div>
+            <h2 style={{ color: C.navy, margin: '0 0 10px 0' }}>Acceso Empleado</h2>
+            <p style={{ color: C.slate, fontSize: 14, marginBottom: 25 }}>Introduce el PIN maestro para gestionar propuestas.</p>
+            <input type="password" placeholder="••••" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} style={{ ...sty.input, textAlign: 'center', fontSize: 24, letterSpacing: 8, marginBottom: 20 }} />
+            <button onClick={handleLogin} style={{ ...sty.btn, width: '100%' }}>Acceder al Sistema</button>
           </div>
         )}
 
-        {/* PASO 0: CREACIÓN COMERCIAL */}
+        {/* LOGIN CLIENTE FINAL */}
+        {step === 99 && (
+          <div style={{ ...sty.card, maxWidth: 450, margin: '80px auto', textAlign: 'center', borderTop: `5px solid ${C.teal}` }}>
+            <div style={{ fontSize: 40, marginBottom: 15 }}>🔒</div>
+            <h2 style={{ color: C.navy, margin: '0 0 10px 0' }}>Propuesta Privada</h2>
+            <p style={{ color: C.slate, fontSize: 14, marginBottom: 25 }}>Por favor, introduce el PIN proporcionado por tu asesor comercial de {BRAND.name}.</p>
+            <input type="password" placeholder="••••" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} style={{ ...sty.input, textAlign: 'center', fontSize: 24, letterSpacing: 8, marginBottom: 20 }} />
+            <button onClick={handleLogin} style={{ ...sty.btn, width: '100%', background: C.teal }}>Ver Propuesta</button>
+          </div>
+        )}
+
+        {/* PASO 0: CREACIÓN DE PROPUESTA */}
         {isAuthenticated && step === 0 && (
           <div style={sty.card}>
-            <h2 style={{ marginTop: 0, fontSize: 24, color: C.navy, borderBottom: `2px solid ${C.muted}`, paddingBottom: 15 }}>Crear Nueva Propuesta Segura</h2>
+            <h2 style={{ marginTop: 0, fontSize: 24, color: C.navy, borderBottom: `2px solid ${C.muted}`, paddingBottom: 15 }}>Crear Nueva Propuesta</h2>
             
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 20, marginBottom: 25, background: '#f8fafc', padding: 20, borderRadius: 12 }}>
               <div>
@@ -330,11 +364,13 @@ export default function App() {
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Responsable (Opcional)</label>
-                <input style={sty.input} value={responsable} onChange={e => setResponsable(e.target.value)} placeholder="Ej: María García (Dirección)" />
+                <input style={sty.input} value={responsable} onChange={e => setResponsable(e.target.value)} placeholder="Ej: María García" />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: C.coral }}>PIN de Acceso (Cliente)</label>
-                <input type="password" style={{ ...sty.input, borderColor: C.coral }} value={pin} onChange={e => setPin(e.target.value)} placeholder="Ej: 1234" />
+                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: C.coral }}>PIN Generado para el Cliente</label>
+                <div style={{ ...sty.input, background: '#fff', border: `1px solid ${C.coral}`, fontWeight: 'bold', color: C.ink, display: 'flex', alignItems: 'center' }}>
+                  {pin} <span style={{fontSize: 12, marginLeft: 'auto', color: C.slate, fontWeight: 400}}>(Auto-generado)</span>
+                </div>
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>URL Logotipo del Colegio (Opcional)</label>
@@ -357,7 +393,7 @@ export default function App() {
             </div>
             {error && <div style={{ marginTop: 15, padding: '15px', background: '#fef2f0', color: C.coral, borderRadius: 8, fontWeight: 600 }}>⚠️ {error}</div>}
             <div style={{ marginTop: 25, textAlign: 'right' }}>
-              <button onClick={handleCruzar} disabled={!inputText.trim() || !pin} style={{ ...sty.btn, opacity: inputText.trim() && pin ? 1 : 0.5, fontSize: 16 }}>Generar propuesta →</button>
+              <button onClick={handleCruzar} disabled={!inputText.trim()} style={{ ...sty.btn, opacity: inputText.trim() ? 1 : 0.5, fontSize: 16 }}>Cruzar datos y generar →</button>
             </div>
           </div>
         )}
@@ -386,16 +422,33 @@ export default function App() {
                     <span style={{ margin: '0 10px', color: C.muted }}>|</span>
                     💻 Gasto Digital: <input type="number" value={costeDigital} onChange={e => setCosteDigital(+e.target.value)} style={{ width: 45, border: 'none', background:'transparent', outline: 'none', fontWeight: 'bold', color: C.blue }} />%
                   </div>
-                  <button onClick={handleGuardar} style={{ ...sty.btn, background: C.teal }}>{saving ? "⏳..." : "💾 Generar URL Cliente"}</button>
+                  <button onClick={handleGuardar} style={{ ...sty.btn, background: C.teal }}>{saving ? "⏳..." : "💾 Guardar Propuesta"}</button>
                 </div>
               </div>
             )}
 
-            {shareUrl && isC && (
-              <div style={{ padding: 20, background: '#e8f5e9', borderRadius: 12, marginBottom: 20, border: '1px solid #c8e6c9', fontSize: 15, textAlign: 'center' }}>
-                <strong style={{ color: C.green }}>¡Enlace listo para enviar al colegio!</strong><br/>
-                <span style={{ fontSize: 13, color: C.slate }}>PIN de acceso para el cliente: <strong>{pin}</strong></span><br/><br/>
-                <a href={shareUrl} target="_blank" rel="noreferrer" style={{ color: C.blue, fontWeight: 'bold', wordBreak: 'break-all' }}>{shareUrl}</a>
+            {/* ZONA DE ENLACES PARA EL COMERCIAL */}
+            {shareUrl && commercialUrl && isC && (
+              <div style={{ padding: 25, background: '#e8f5e9', borderRadius: 12, marginBottom: 25, border: '1px solid #c8e6c9', textAlign: 'center' }}>
+                <strong style={{ color: C.green, fontSize: 18 }}>¡Propuesta guardada con éxito!</strong>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 20, textAlign: 'left' }}>
+                  
+                  <div style={{ background: '#fff', padding: 20, borderRadius: 10, border: `1px solid ${C.muted}` }}>
+                    <div style={{ fontSize: 12, color: C.slate, fontWeight: 800, textTransform: 'uppercase', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
+                      <span>🏫 Enlace para el Cliente</span>
+                      <span style={{ color: C.coral }}>PIN: {pin}</span>
+                    </div>
+                    <a href={shareUrl} target="_blank" rel="noreferrer" style={{ color: C.blue, fontWeight: 'bold', wordBreak: 'break-all', fontSize: 14 }}>{shareUrl}</a>
+                    <p style={{ fontSize: 12, color: C.slate, margin: '10px 0 0' }}>Envía este link junto con el PIN al colegio.</p>
+                  </div>
+
+                  <div style={{ background: '#fff', padding: 20, borderRadius: 10, border: `1px solid ${C.muted}` }}>
+                    <div style={{ fontSize: 12, color: C.slate, fontWeight: 800, textTransform: 'uppercase', marginBottom: 10 }}>📝 Tu enlace Privado (Edición)</div>
+                    <a href={commercialUrl} target="_blank" rel="noreferrer" style={{ color: C.teal, fontWeight: 'bold', wordBreak: 'break-all', fontSize: 14 }}>{commercialUrl}</a>
+                    <p style={{ fontSize: 12, color: C.slate, margin: '10px 0 0' }}>Guarda este link para recuperar la propuesta y editarla.</p>
+                  </div>
+
+                </div>
               </div>
             )}
 
@@ -405,7 +458,11 @@ export default function App() {
                 <button key={t} onClick={() => setTab(t)} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === t ? C.blue : '#fff', color: tab === t ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>{t}</button>
               ))}
               {isC && <button onClick={() => setTab('editoriales')} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'editoriales' ? C.blue : '#fff', color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>Editoriales y Rappel</button>}
-              {data?.notFound?.length > 0 && <button onClick={() => setTab('notFound')} style={{ padding: '10px 20px', borderRadius: 8, border: `2px solid ${C.coral}`, background: tab === 'notFound' ? C.coral : '#fff', color: tab === 'notFound' ? '#fff' : C.coral, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>⚠️ {data.notFound.length} Faltantes</button>}
+              
+              {/* BOTÓN FALTANTES BLINDADO */}
+              {notFoundList.length > 0 && (
+                <button onClick={() => setTab('notFound')} style={{ padding: '10px 20px', borderRadius: 8, border: `2px solid ${C.coral}`, background: tab === 'notFound' ? C.coral : '#fff', color: tab === 'notFound' ? '#fff' : C.coral, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>⚠️ {notFoundList.length} Faltantes</button>
+              )}
             </div>
 
             {!isC && tab === 'propuesta' && (
@@ -579,12 +636,12 @@ export default function App() {
               </div>
             )}
 
-            {tab === 'notFound' && data?.notFound && (
+            {tab === 'notFound' && notFoundList.length > 0 && (
               <div style={{ ...sty.card, border: `2px solid ${C.coral}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 20 }}>
                   <div>
-                    <h3 style={{ marginTop: 0, color: C.coral }}>⚠️ Atención: {data.notFound.length} ISBNs ignorados (No están en catálogo)</h3>
-                    <p style={{ color: C.slate, margin: 0 }}>El comercial debe decidir si crear la propuesta sin ellos o avisar a Compras para que los den de alta en el Excel.</p>
+                    <h3 style={{ marginTop: 0, color: C.coral }}>⚠️ Atención: {notFoundList.length} ISBNs ignorados (No están en catálogo)</h3>
+                    <p style={{ color: C.slate, margin: 0 }}>Avisa a Compras para que los den de alta en la Master DB y después vuelve a cruzar el Excel.</p>
                   </div>
                   <button onClick={handleSendWebhook} disabled={webhookSent} style={{ ...sty.btn, background: webhookSent ? C.green : C.ink, display: 'flex', alignItems: 'center', gap: 10 }}>
                     {webhookSent ? "✅ Enviado a Compras" : "✉️ Avisar a Compras (n8n)"}
@@ -592,7 +649,7 @@ export default function App() {
                 </div>
                 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 25 }}>
-                  {data.notFound.map((isbn, i) => (
+                  {notFoundList.map((isbn, i) => (
                     <span key={i} style={{ padding: '8px 12px', background: '#fef2f0', borderRadius: 8, fontFamily: 'monospace', fontSize: 13, fontWeight: 'bold', color: C.coral }}>{isbn}</span>
                   ))}
                 </div>
@@ -602,17 +659,15 @@ export default function App() {
         )}
       </div>
 
-      {/* FOOTER CORPORATIVO (Basado en el HTML de Scholarum) */}
+      {/* FOOTER CORPORATIVO */}
       <div style={{ background: '#ffffff', borderTop: '1px solid #e9ecf1', padding: '40px 20px', marginTop: 'auto' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', background: '#ffffff', border: '1px solid #f1f1f1', borderRadius: 15, padding: '20px', gap: 30 }}>
-            {/* Logo Principal */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', background: '#ffffff', border: '1px solid #f1f1f1', borderRadius: 15, padding: '20px', gap: 30, boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
             <div style={{ borderRight: '1px solid #f1f1f1', paddingRight: 30 }}>
               <a href="https://www.scholarum.es" target="_blank" rel="noreferrer">
                 <img src="https://www.scholarum.es/wp-content/uploads/footer/logo-scholarum.svg" alt="Scholarum" style={{ height: 40 }} />
               </a>
             </div>
-            {/* Logos Secundarios (Con efecto hover) */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 25, alignItems: 'center', justifyContent: 'center' }}>
               <LogoHoverLink href="https://somosdeliber.com" src="https://www.scholarum.es/wp-content/uploads/footer/logo-deliber.svg" height={25} />
               <LogoHoverLink href="https://zonacoles.es/" src="https://www.scholarum.es/wp-content/uploads/footer/logo-zonacoles.svg" height={28} />
@@ -641,7 +696,6 @@ function KPI({ label, value, sub, icon, accent, color }) {
   );
 }
 
-// Componente para el efecto de escala de grises al pasar el ratón (Footer)
 function LogoHoverLink({ href, src, height }) {
   const [hover, setHover] = useState(false);
   return (
