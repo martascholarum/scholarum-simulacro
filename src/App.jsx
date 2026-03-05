@@ -1,18 +1,26 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
-// ── CONFIGURACIÓN DE MARCA ──
+// ════════════════════════════════════════════════════════════════════
+// 1. 🎨 CONFIGURACIÓN DE TU MARCA (Cambia estos datos)
+// ════════════════════════════════════════════════════════════════════
 const BRAND = {
-  name: "DELIBER",       // Cambiado a Deliber por la URL que pasaste
-  primary: "#1b6b93",    
-  secondary: "#00897b",  
-  accent: "#e5a100",     
-  bg: "#f4f7fa",         
-  card: "#ffffff"        
+  name: "DELIBER",
+  companyLogo: "", // <-- Pega aquí la URL de tu logo (ej: "https://somosdeliber.com/logo.png"). Si lo dejas vacío, saldrá el texto.
+  primary: "#1b6b93",    // Color principal (Cabeceras, Botones primarios)
+  secondary: "#00897b",  // Color secundario (Acentos, Detalles)
+  accent: "#e5a100",     // Color de destaque (Rappel, Alertas)
+  bg: "#f4f7fa",         // Color de fondo de la app
+  card: "#ffffff"        // Color de las tarjetas
 };
 
+// ════════════════════════════════════════════════════════════════════
+// 2. 🔌 CONEXIONES (Apps Script y n8n)
+// ════════════════════════════════════════════════════════════════════
 const API = "https://script.google.com/macros/s/AKfycbwCYoLIusztmA7AXeEx8HnVprZoQJFMW-vIslvmgFNdvzt_NoY5d8w9nNOLP2btQ0b0/exec";
+const N8N_WEBHOOK_URL = ""; // <-- PEGA AQUÍ LA URL DE TU WEBHOOK DE N8N PARA LOS ISBN FALTANTES
 
+// ── Lógica interna de colores ──
 const C = {
   ink: '#0c1e30', navy: '#122d47', blue: BRAND.primary, teal: BRAND.secondary, 
   gold: BRAND.accent, coral: '#d4513d', slate: '#6b7f94', green: '#2a7d3f', 
@@ -20,7 +28,7 @@ const C = {
   ch: [BRAND.primary, BRAND.secondary, BRAND.accent, '#d4513d', '#7b5ea7']
 };
 
-const fmt = n => n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+const fmt = n => (parseFloat(n) || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 const sh = p => (p || '').replace(/Comercial (de ediciones |Grupo )/g, '').replace(/ S\.A\.U?\./g, '').replace(/ SL$/,'').replace(/ S\.L\.U?\./g,'').replace(/Ediciones /,'').replace(/Editorial /,'');
 
 function parseInput(text) {
@@ -65,7 +73,6 @@ export default function App() {
   const [step, setStep] = useState(0);
   const [loadingMsg, setLoadingMsg] = useState('Cargando...');
   
-  // ── CAMPOS DE PERSONALIZACIÓN ──
   const [nombre, setNombre] = useState('');
   const [responsable, setResponsable] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
@@ -84,13 +91,13 @@ export default function App() {
   const [shareUrl, setShareUrl] = useState('');
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
+  const [webhookSent, setWebhookSent] = useState(false); // Estado para el botón de n8n
   const fileRef = useRef(null);
 
   const isC = viewMode === 'comercial';
 
   useEffect(() => { if (isC && tab === 'propuesta') setTab('resumen'); }, [isC, tab]);
 
-  // Carga inicial por URL
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const id = p.get('id'), modo = p.get('modo');
@@ -102,10 +109,10 @@ export default function App() {
           if (res.error) throw new Error(res.error);
           setNombre(res.nombre || '');
           setData(res.datos); setEditableData(res.datos);
-          setCostePapel(res.costeOp || 12); setCosteDigital(res.costeOpDigital || 10);
-          setProbabilidad(res.prob || 100);
+          setCostePapel(parseFloat(res.costeOp) || 12); 
+          setCosteDigital(parseFloat(res.costeOpDigital) || 10);
+          setProbabilidad(parseFloat(res.prob) || 100);
           
-          // Lógica Ninja para leer los metadatos sin tocar el backend
           const loadedDtos = { ...(res.condiciones || {}) };
           if (loadedDtos._meta) {
             setLogoUrl(loadedDtos._meta.logoUrl || '');
@@ -138,7 +145,7 @@ export default function App() {
       r.found.forEach(b => {
         const prov = b.proveedor || 'Sin proveedor';
         if (!dtos[prov]) dtos[prov] = { sum: 0, count: 0 };
-        dtos[prov].sum += (b.dto || 0);
+        dtos[prov].sum += (parseFloat(b.dto) || 0);
         dtos[prov].count += 1;
       });
       const finalDtos = {};
@@ -147,6 +154,10 @@ export default function App() {
         finalDtos[prov] = { scho: avg, col: avg };
       });
       setColDtos(finalDtos); setStep(2); setTab('resumen');
+      
+      // Mostrar la pestaña de error automáticamente si faltan libros para que el comercial se dé cuenta
+      if(r.notFound && r.notFound.length > 0) setTab('notFound');
+
     } catch (e) { setError(e.message); setStep(0); }
     finally { setLoading(false); }
   }, [inputText]);
@@ -154,7 +165,6 @@ export default function App() {
   const handleGuardar = useCallback(async () => {
     if (!editableData) return; setSaving(true);
     try {
-      // Guardamos la personalización inyectándola en las condiciones de forma transparente
       const dtosConMeta = { ...colDtos, _meta: { logoUrl, responsable } };
       const saveData = { nombre, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: dtosConMeta, datos: editableData };
       const r = await apiCall('guardar', { data: saveData });
@@ -164,6 +174,29 @@ export default function App() {
     } catch (e) { alert('Error: ' + e.message); }
     finally { setSaving(false); }
   }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable]);
+
+  // ── FUNCIÓN PARA MANDAR DATOS A N8N ──
+  const handleSendWebhook = async () => {
+    if(!N8N_WEBHOOK_URL) {
+      alert("Primero debes añadir la URL de tu Webhook de n8n en el código (línea 16).");
+      return;
+    }
+    try {
+      await fetch(N8N_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          colegio: nombre,
+          fecha: new Date().toISOString(),
+          totalFaltantes: data.notFound.length,
+          isbns: data.notFound
+        })
+      });
+      setWebhookSent(true);
+    } catch (e) {
+      alert("Hubo un error al enviar a n8n. Revisa la consola o los CORS del webhook.");
+    }
+  };
 
   const updateAlumnos = useCallback((isbn, val) => {
     setEditableData(prev => ({ ...prev, found: prev.found.map(b => b.isbn === isbn ? { ...b, alumnos: parseInt(val) || 0 } : b) }));
@@ -176,32 +209,45 @@ export default function App() {
     r.readAsText(f);
   }, []);
 
+  // ── MOTOR DE CÁLCULO BLINDADO (Anti NaN) ──
   const calc = useMemo(() => {
     if (!editableData?.found) return null;
-    const probFactor = probabilidad / 100;
+    
+    // Forzamos a que siempre sea un número (0 si falla)
+    const probSegura = parseFloat(probabilidad) || 0;
+    const probFactor = probSegura / 100;
 
     const rows = editableData.found.map(book => {
-      const coste = book.coste; 
-      const d = colDtos[book.proveedor] || { scho: book.dto || 0, col: book.dto || 0 };
-      const difFactor = d.col > d.scho ? (d.col - d.scho) / (100 - d.scho) : 0;
+      const coste = parseFloat(book.coste) || 0; 
+      const pvp = parseFloat(book.pvp) || 0;
+      const alumnos = parseFloat(book.alumnos) || 0;
+      const dtoScho = parseFloat(book.dto) || 0;
+      
+      const d = colDtos[book.proveedor] || { scho: dtoScho, col: dtoScho };
+      const dCol = parseFloat(d.col) || 0;
+      const dScho = parseFloat(d.scho) || 0;
+      
+      const difFactor = dCol > dScho ? (dCol - dScho) / (100 - dScho) : 0;
       const costeCol = coste * (1 - difFactor);
       
       const isPapel = (book.formato || 'Papel').toLowerCase().includes('papel');
-      const opPct = (isPapel ? costePapel : costeDigital) / 100;
+      const pctPapel = parseFloat(costePapel) || 0;
+      const pctDigital = parseFloat(costeDigital) || 0;
+      const opPct = (isPapel ? pctPapel : pctDigital) / 100;
       
-      const alumsEstimados = (book.alumnos || 0) * probFactor;
-      const tv = alumsEstimados * book.pvp;
+      const alumsEstimados = alumnos * probFactor;
+      const tv = alumsEstimados * pvp;
       const tcs = alumsEstimados * coste;
       const tcc = alumsEstimados * costeCol;
       const costOp = tv * opPct;
 
-      return { ...book, tv, tcs, tcc, costOp, rap: tcs - tcc, isPapel, alumsEstimados };
+      return { ...book, pvp, alumnos, tv, tcs, tcc, costOp, rap: tcs - tcc, isPapel, alumsEstimados };
     });
 
-    const tv = rows.reduce((s, r) => s + r.tv, 0);
-    const tcs = rows.reduce((s, r) => s + r.tcs, 0);
-    const tcc = rows.reduce((s, r) => s + r.tcc, 0);
-    const totalCostOp = rows.reduce((s, r) => s + r.costOp, 0);
+    const tv = rows.reduce((s, r) => s + (r.tv || 0), 0);
+    const tcs = rows.reduce((s, r) => s + (r.tcs || 0), 0);
+    const tcc = rows.reduce((s, r) => s + (r.tcc || 0), 0);
+    const totalCostOp = rows.reduce((s, r) => s + (r.costOp || 0), 0);
     const rap = tcs - tcc;
     const comision = tv - tcs - totalCostOp;
     const benColegio = comision + rap;
@@ -233,11 +279,15 @@ export default function App() {
     <div style={{ background: C.light, minHeight: '100vh', fontFamily: 'Outfit, sans-serif', color: C.ink }}>
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
       
-      {/* HEADER CORPORATIVO */}
+      {/* CABECERA CORPORATIVA DE LA APP */}
       <div style={{ background: `linear-gradient(135deg, ${C.navy}, ${C.blue})`, padding: '20px 40px', color: '#fff', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
-            <div style={{ background: '#fff', color: C.blue, fontWeight: 900, fontSize: 20, padding: '5px 12px', borderRadius: 8, letterSpacing: -1 }}>D.</div>
+            {BRAND.companyLogo ? (
+              <img src={BRAND.companyLogo} alt={BRAND.name} style={{ height: 40, objectFit: 'contain', background: '#fff', padding: 5, borderRadius: 8 }} />
+            ) : (
+              <div style={{ background: '#fff', color: C.blue, fontWeight: 900, fontSize: 20, padding: '5px 12px', borderRadius: 8, letterSpacing: -1 }}>D.</div>
+            )}
             <div>
               <div style={{ fontSize: 11, letterSpacing: 3, fontWeight: 700, opacity: 0.8 }}>{BRAND.name} EDUCACIÓN</div>
               <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{nombre ? `Propuesta: ${nombre}` : "Portal Escolar"}</h1>
@@ -254,12 +304,10 @@ export default function App() {
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '30px 20px' }}>
         
-        {/* PASO 0: CREACIÓN COMERCIAL */}
         {step === 0 && (
           <div style={sty.card}>
             <h2 style={{ marginTop: 0, fontSize: 24, color: C.navy, borderBottom: `2px solid ${C.muted}`, paddingBottom: 15 }}>Crear Nueva Propuesta</h2>
             
-            {/* Campos de personalización */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 20, marginBottom: 25, background: '#f8fafc', padding: 20, borderRadius: 12 }}>
               <div>
                 <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Nombre del centro</label>
@@ -304,7 +352,7 @@ export default function App() {
 
         {(step === 2 || step === 3) && calc && (
           <>
-            {/* CONTROLES COMERCIALES (Ocultos para el colegio) */}
+            {/* CONTROLES COMERCIALES */}
             {isC && (
               <div style={{ background: '#fff', padding: '15px 25px', borderRadius: 12, marginBottom: 20, border: `1px solid ${C.blue}`, display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: 200 }}>
@@ -332,20 +380,19 @@ export default function App() {
               </div>
             )}
 
-            {/* MENÚ DE PESTAÑAS */}
+            {/* PESTAÑAS */}
             <div style={{ display: 'flex', gap: 10, marginBottom: 25, flexWrap: 'wrap' }}>
               {!isC && <button onClick={() => setTab('propuesta')} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'propuesta' ? C.blue : '#fff', color: tab === 'propuesta' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>Propuesta Integral</button>}
               {['resumen', 'detalle'].map(t => (
                 <button key={t} onClick={() => setTab(t)} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === t ? C.blue : '#fff', color: tab === t ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>{t}</button>
               ))}
               {isC && <button onClick={() => setTab('editoriales')} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'editoriales' ? C.blue : '#fff', color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>Editoriales y Rappel</button>}
-              {data?.notFound?.length > 0 && <button onClick={() => setTab('notFound')} style={{ padding: '10px 20px', borderRadius: 8, border: `2px solid ${C.coral}`, background: tab === 'notFound' ? C.coral : '#fff', color: tab === 'notFound' ? '#fff' : C.coral, fontWeight: 700, cursor: 'pointer' }}>⚠️ {data.notFound.length} No Encontrados</button>}
+              {data?.notFound?.length > 0 && <button onClick={() => setTab('notFound')} style={{ padding: '10px 20px', borderRadius: 8, border: `2px solid ${C.coral}`, background: tab === 'notFound' ? C.coral : '#fff', color: tab === 'notFound' ? '#fff' : C.coral, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>⚠️ {data.notFound.length} Faltantes</button>}
             </div>
 
-            {/* 1. PESTAÑA PROPUESTA (LA LANDING PAGE DEL COLEGIO) */}
+            {/* 1. PROPUESTA (CLIENTE) */}
             {!isC && tab === 'propuesta' && (
               <div style={{ animation: 'fadeIn 0.5s ease-in' }}>
-                {/* HERO SECTION PERSONALIZADO */}
                 <div style={{ background: `linear-gradient(135deg, ${C.navy}, ${C.blue})`, borderRadius: 16, padding: '50px 40px', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 30, marginBottom: 30, boxShadow: '0 10px 30px rgba(27, 107, 147, 0.2)' }}>
                   <div style={{ flex: 1, minWidth: 300 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: 2, opacity: 0.8, marginBottom: 10, textTransform: 'uppercase' }}>Propuesta de colaboración</div>
@@ -360,12 +407,11 @@ export default function App() {
                   )}
                 </div>
 
-                {/* CALCULADORA INTERACTIVA Y DISCLAIMER */}
                 <div style={{ ...sty.card, border: `2px solid ${C.teal}`, position: 'relative' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 30 }}>
                     <div style={{ flex: 1, minWidth: 300 }}>
                       <h3 style={{ marginTop: 0, color: C.teal, display: 'flex', alignItems: 'center', gap: 10, fontSize: 22 }}>🧮 Simulador de Retorno</h3>
-                      <p style={{ color: C.slate, fontSize: 15, lineHeight: 1.5, margin: '10px 0 25px 0' }}>Descubre el retorno económico para tu centro ajustando la estimación de familias que utilizarán la plataforma de compra online.</p>
+                      <p style={{ color: C.slate, fontSize: 15, lineHeight: 1.5, margin: '10px 0 25px 0' }}>Descubre el retorno económico para tu centro ajustando la estimación de familias que utilizarán la plataforma.</p>
                       
                       <div style={{ background: '#f8fafc', padding: '15px 20px', borderRadius: 10 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -374,7 +420,6 @@ export default function App() {
                         </div>
                         <input type="range" min="10" max="100" step="5" value={probabilidad} onChange={e => setProbabilidad(+e.target.value)} style={{ width: '100%', cursor: 'pointer', accentColor: C.teal }} />
                       </div>
-                      <p style={{ fontSize: 12, color: C.slate, marginTop: 15, fontStyle: 'italic' }}>* Datos aproximados. Sujeto a variaciones finales de compra y actualización de tarifas anuales.</p>
                     </div>
                     
                     <div style={{ display: 'flex', gap: 15, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -382,14 +427,16 @@ export default function App() {
                       {calc.rap > 0 && <KPI label="Rappel Garantizado" value={fmt(calc.rap)} sub="Por mejora de condiciones" color={C.coral} />}
                     </div>
                   </div>
+                  <div style={{ borderTop: `1px solid ${C.muted}`, marginTop: 25, paddingTop: 15, textAlign: 'center' }}>
+                    <p style={{ fontSize: 13, color: C.slate, fontStyle: 'italic', margin: 0 }}>* Datos aproximados. Sujeto a variaciones finales de compra y actualización de tarifas anuales.</p>
+                  </div>
                 </div>
 
-                {/* PILARES DE VENTA (Sacados de la web oficial) */}
                 <h3 style={{ fontSize: 26, color: C.navy, textAlign: 'center', marginTop: 45, marginBottom: 30 }}>¿Por qué externalizar "La Tienda del Cole" con nosotros?</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 25 }}>
                   <div style={{ padding: 30, background: '#fff', borderRadius: 16, borderTop: `5px solid ${C.blue}`, boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
                     <h3 style={{ margin: '0 0 15px 0', fontSize: 18 }}>💻 Tu propia Tienda Online</h3>
-                    <p style={{ margin: 0, color: C.slate, fontSize: 14, lineHeight: 1.6 }}>Creamos un e-commerce totalmente gratuito y personalizado a tu nombre. Vende libros, licencias, uniformes y material abriendo una nueva línea de negocio a coste cero.</p>
+                    <p style={{ margin: 0, color: C.slate, fontSize: 14, lineHeight: 1.6 }}>Creamos un e-commerce totalmente gratuito y personalizado a tu nombre. Vende libros, licencias y material abriendo una nueva línea de negocio a coste cero.</p>
                   </div>
                   <div style={{ padding: 30, background: '#fff', borderRadius: 16, borderTop: `5px solid ${C.teal}`, boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
                     <h3 style={{ margin: '0 0 15px 0', fontSize: 18 }}>📦 Logística 100% Gestionada</h3>
@@ -407,17 +454,13 @@ export default function App() {
               </div>
             )}
 
-            {/* 2. PESTAÑA RESUMEN (Ahora el colegio ve todos los datos correctos) */}
+            {/* 2. RESUMEN */}
             {tab === 'resumen' && (
               <div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15, marginBottom: 25 }}>
-                  <KPI label="Facturación Estimada" value={fmt(calc.tv)} sub={`De ${calc.totalAlumnos} alumnos`} icon="💰" />
-                  
-                  {/* Estos dos ahora SÍ los ve el colegio */}
-                  <KPI label="Total Costes" value={fmt(calc.tcc + calc.totalCostOp)} sub={`Material: ${fmt(calc.tcc)} | Op: ${fmt(calc.totalCostOp)}`} icon="📉" color={C.slate} />
+                  <KPI label="Facturación Estimada" value={fmt(calc.tv)} sub={`De ${Math.round(calc.totalAlumnos * (probabilidad/100))} compras estimadas`} icon="💰" />
+                  <KPI label="Total Costes Centro" value={fmt(calc.tcc + calc.totalCostOp)} sub={`Material: ${fmt(calc.tcc)} | Op: ${fmt(calc.totalCostOp)}`} icon="📉" color={C.slate} />
                   <KPI label="Beneficio Colegio" value={fmt(calc.benColegio)} sub="Comisión + Rappel" icon="🏫" accent />
-                  
-                  {/* Este solo lo ve el comercial */}
                   {isC && <KPI label="Beneficio Tienda" value={fmt(calc.comision)} sub="Neto Deliber" icon="📈" />}
                 </div>
 
@@ -443,11 +486,10 @@ export default function App() {
                     </ResponsiveContainer>
                   </div>
                 </div>
-                <p style={{ fontSize: 12, color: C.slate, fontStyle: 'italic', textAlign: 'center' }}>* Datos aproximados. Sujeto a variaciones finales de compra y actualización de tarifas anuales.</p>
               </div>
             )}
 
-            {/* 3. PESTAÑA DETALLE */}
+            {/* 3. DETALLE */}
             {tab === 'detalle' && (
               <div style={sty.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -473,7 +515,7 @@ export default function App() {
                           <td style={{ padding: 12, fontFamily: 'monospace', color: C.slate }}>{r.isbn}</td>
                           <td style={{ padding: 12, fontWeight: 600 }}>{r.titulo}</td>
                           <td style={{ padding: 12, fontSize: 16 }}>{r.isPapel ? '📄' : '💻'}</td>
-                          <td style={{ padding: 12 }}>{r.pvp?.toFixed(2)}€</td>
+                          <td style={{ padding: 12 }}>{fmt(r.pvp)}</td>
                           <td style={{ padding: 12, textAlign: 'center' }}>
                             <input type="number" value={r.alumnos} onChange={e => updateAlumnos(r.isbn, e.target.value)} disabled={!isC} style={{ width: 60, padding: 6, textAlign: 'center', border: `1px solid ${C.muted}`, borderRadius: 6, background: isC ? '#fff' : 'transparent', fontWeight: 'bold' }} />
                           </td>
@@ -487,7 +529,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 4. PESTAÑA EDITORIALES (Solo Comercial) */}
+            {/* 4. EDITORIALES (Solo Comercial) */}
             {tab === 'editoriales' && isC && (
               <div style={sty.card}>
                 <h3 style={{ marginTop: 0 }}>Descuentos y Rappel por Editorial</h3>
@@ -522,11 +564,23 @@ export default function App() {
               </div>
             )}
 
-            {/* 5. PESTAÑA NO ENCONTRADOS */}
+            {/* 5. N8N / NO ENCONTRADOS */}
             {tab === 'notFound' && data?.notFound && (
               <div style={{ ...sty.card, border: `2px solid ${C.coral}` }}>
-                <h3 style={{ marginTop: 0, color: C.coral }}>⚠️ Atención: {data.notFound.length} ISBNs ignorados por no estar en el catálogo</h3>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 15 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 20 }}>
+                  <div>
+                    <h3 style={{ marginTop: 0, color: C.coral }}>⚠️ Atención: {data.notFound.length} ISBNs ignorados (No están en catálogo)</h3>
+                    <p style={{ color: C.slate, margin: 0 }}>El comercial debe decidir si crear la propuesta sin ellos o avisar a Compras para que los den de alta en el Excel.</p>
+                  </div>
+                  <button 
+                    onClick={handleSendWebhook} 
+                    disabled={webhookSent}
+                    style={{ ...sty.btn, background: webhookSent ? C.green : C.ink, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {webhookSent ? "✅ Enviado a Compras" : "✉️ Avisar a Compras (n8n)"}
+                  </button>
+                </div>
+                
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 25 }}>
                   {data.notFound.map((isbn, i) => (
                     <span key={i} style={{ padding: '8px 12px', background: '#fef2f0', borderRadius: 8, fontFamily: 'monospace', fontSize: 13, fontWeight: 'bold', color: C.coral }}>{isbn}</span>
                   ))}
