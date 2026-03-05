@@ -6,10 +6,10 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 // ════════════════════════════════════════════════════════════════════
 const BRAND = {
   name: "DELIBER",
-  companyLogo: "", // <-- Pega aquí la URL de tu logo (ej: "https://somosdeliber.com/logo.png"). Si lo dejas vacío, saldrá el texto.
-  primary: "#1b6b93",    // Color principal (Cabeceras, Botones primarios)
-  secondary: "#00897b",  // Color secundario (Acentos, Detalles)
-  accent: "#e5a100",     // Color de destaque (Rappel, Alertas)
+  companyLogo: "https://somosdeliber.com/wp-content/uploads/logo-deliber.png", // <-- Pega aquí la URL de tu logo (ej: "https://somosdeliber.com/logo.png"). Si lo dejas vacío, saldrá el texto.
+  primary: "#0071cb",    // Color principal (Cabeceras, Botones primarios)
+  secondary: "#00a2a3",  // Color secundario (Acentos, Detalles)
+  accent: "#ff7d6a",     // Color de destaque (Rappel, Alertas)
   bg: "#f4f7fa",         // Color de fondo de la app
   card: "#ffffff"        // Color de las tarjetas
 };
