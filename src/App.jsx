@@ -18,7 +18,7 @@ const BRAND = {
 const COMMERCIAL_PIN = "1234"; 
 const API = "https://script.google.com/macros/s/AKfycbwCYoLIusztmA7AXeEx8HnVprZoQJFMW-vIslvmgFNdvzt_NoY5d8w9nNOLP2btQ0b0/exec";
 const N8N_WEBHOOK_URL = "https://scholarumdigital.app.n8n.cloud/webhook/0c901ba1-fd9e-4a10-91f0-c5b612249163"; 
-const CLARITY_ID = ""; 
+const CLARITY_ID = ""; // Opcional: ID de Microsoft Clarity
 
 const C = {
   ink: '#0f172a', navy: '#1e293b', blue: BRAND.primary, teal: BRAND.secondary, 
@@ -294,12 +294,19 @@ export default function App() {
 
   const handleGuardar = useCallback(async () => {
     if (!editableData) return; setSaving(true);
+    
+    // CHIVATO PARA DEBUGGEAR LA ACTUALIZACIÓN
+    console.log("Intentando guardar. ID actual:", currentId);
+    
     try {
       const datosSeguros = { ...editableData, meta: { logoUrl, responsable, comercialName, comentarios, pin, notFound: notFoundList, invalidCodes: invalidList } };
       const saveData = { nombre, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: colDtos, datos: datosSeguros };
       const baseUrl = `${window.location.origin}${window.location.pathname}`;
 
+      // AQUÍ LE ESTAMOS PASANDO EL currentId A GOOGLE
       const r = await apiCall('guardar', { data: saveData, id: currentId, baseUrl });
+      
+      console.log("Respuesta de Google:", r);
       if (r.error) throw new Error(r.error);
       
       setCurrentId(r.id); 
@@ -309,26 +316,25 @@ export default function App() {
     finally { setSaving(false); }
   }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable, comercialName, comentarios, pin, notFoundList, invalidList, currentId]);
 
-  // ── FIX: BUCLE DE ENVÍOS A N8N PARA FILAS INDEPENDIENTES ──
+  // ── FIX: N8N AHORA RECIBE UN ARRAY DE OBJETOS PARA DIVIDIRLOS ──
   const handleSendWebhookNotFound = async () => {
     if(!N8N_WEBHOOK_URL) return;
     try {
-      // Disparamos una llamada fetch individual por cada ISBN que falta
-      const promesas = notFoundList.map(isbn => {
-        return fetch(N8N_WEBHOOK_URL, { 
-          method: 'POST', 
-          headers: { 'Content-Type': 'application/json' }, 
-          body: JSON.stringify({ 
-            tipo: 'ISBN_FALTANTE', 
-            colegio: nombre, 
-            comercial: comercialName || 'No especificado', 
-            fecha: new Date().toISOString(), 
-            isbnFaltante: isbn 
-          }) 
-        });
-      });
+      // Creamos un array (lista) de JSONs. n8n detecta esto y lo divide en iteraciones automáticas.
+      const payloadArray = notFoundList.map(isbn => ({
+        tipo: 'ISBN_FALTANTE',
+        colegio: nombre,
+        comercial: comercialName || 'No especificado',
+        fecha: new Date().toISOString(),
+        isbnFaltante: isbn
+      }));
 
-      await Promise.all(promesas); // Esperamos a que todos los envíos terminen
+      await fetch(N8N_WEBHOOK_URL, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(payloadArray) 
+      });
+      
       setWebhookSentNotFound(true);
     } catch (e) { alert("Hubo un error al enviar a n8n."); }
   };
@@ -389,7 +395,10 @@ export default function App() {
     const prov = Object.values(bp).map(p => ({ ...p, m: p.tv - p.tcs, ben: (p.tv - p.tcs - p.costOp) + p.rap })).sort((a,b) => b.tv - a.tv);
     const totalAlumnos = rows.reduce((s, r) => s + (r.alumnos || 0), 0);
     
-    return { rows, prov, tv, tcs, tcc, totalCostOp, comision, rap, benColegio, t: rows.length, totalAlumnos };
+    // CÁLCULO DEL % DEL MARGEN DE DELIBER
+    const deliberMarginPct = tv > 0 ? ((totalCostOp / tv) * 100).toFixed(1) : 0;
+
+    return { rows, prov, tv, tcs, tcc, totalCostOp, deliberMarginPct, comision, rap, benColegio, t: rows.length, totalAlumnos };
   }, [editableData, colDtos, costePapel, costeDigital, probabilidad]);
 
   const filtered = calc?.rows.filter(r => !search || r.titulo?.toLowerCase().includes(search.toLowerCase()) || r.isbn?.includes(search)) || [];
@@ -517,6 +526,7 @@ export default function App() {
 
         {isAuthenticated && (step === 2 || step === 3) && calc && (
           <>
+            {/* ALERTAS: Faltantes y No Identificados */}
             {isC && (notFoundList.length > 0 || invalidList.length > 0) && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginBottom: 25 }}>
                 
@@ -543,7 +553,7 @@ export default function App() {
                         {showInvalid ? "Ocultar" : "👀 Ver Códigos"}
                       </button>
                     </div>
-                    <p style={{fontSize: 13, color: C.slate, margin: '0 0 15px'}}>Informativo: Estos códigos no tienen 13 dígitos y han sido ignorados.</p>
+                    <p style={{fontSize: 13, color: C.slate, margin: '0 0 15px'}}>Informativo: Estos códigos no tienen 13 dígitos y han sido ignorados. NO se envían a compras.</p>
                     {showInvalid && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, background: '#fff', padding: 15, borderRadius: 10, border: `1px solid ${C.accent}33`, marginBottom: 15 }}>{invalidList.map((i,x) => <span key={x} style={{fontSize:13, fontFamily:'monospace', background:'#fef3c7', padding:'4px 8px', borderRadius:6, color:'#b45309'}}>{i}</span>)}</div>}
                   </div>
                 )}
@@ -590,7 +600,7 @@ export default function App() {
             {isC && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 15, marginBottom: 25, animation: 'fadeIn 0.3s' }}>
                 <KPI label="Facturación" value={fmt(calc.tv)} sub={`Estimada al ${probabilidad}%`} icon="💰" />
-                <KPI label="Beneficio Deliber" value={fmt(calc.totalCostOp)} sub="Margen operativo" icon="⚙️" color={C.slate} />
+                <KPI label="Beneficio Deliber" value={fmt(calc.totalCostOp)} sub={`Margen Operativo (${calc.deliberMarginPct}%)`} icon="⚙️" color={C.slate} />
                 <KPI label="Beneficio Colegio" value={fmt(calc.benColegio)} sub="Comisión + Rappel" icon="🏫" accent />
               </div>
             )}
@@ -765,7 +775,6 @@ export default function App() {
               </div>
             )}
 
-            {/* 2. RESUMEN Y GRÁFICOS */}
             {tab === 'resumen' && (
               <div style={{ animation: 'fadeIn 0.3s' }}>
                 {!isC && (
@@ -808,7 +817,6 @@ export default function App() {
               </div>
             )}
 
-            {/* 3. DETALLE */}
             {tab === 'detalle' && (
               <div style={{...sty.card, animation: 'fadeIn 0.3s'}}>
                 
@@ -860,7 +868,6 @@ export default function App() {
               </div>
             )}
 
-            {/* 4. EDITORIALES Y RAPPEL */}
             {tab === 'editoriales' && (
               <div style={{...sty.card, animation: 'fadeIn 0.3s'}}>
                 <h3 style={{ marginTop: 0, fontSize: 24, color: C.navy, fontWeight: 800, letterSpacing: '-0.5px' }}>Descuentos y Rappel por Editorial</h3>
