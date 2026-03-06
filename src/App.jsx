@@ -18,7 +18,7 @@ const BRAND = {
 const COMMERCIAL_PIN = "1234"; 
 const API = "https://script.google.com/macros/s/AKfycbwCYoLIusztmA7AXeEx8HnVprZoQJFMW-vIslvmgFNdvzt_NoY5d8w9nNOLP2btQ0b0/exec";
 const N8N_WEBHOOK_URL = "https://scholarumdigital.app.n8n.cloud/webhook/0c901ba1-fd9e-4a10-91f0-c5b612249163"; 
-const CLARITY_ID = ""; // 👈 PEGA AQUÍ TU ID DE MICROSOFT CLARITY PARA GRABAR SESIONES
+const CLARITY_ID = ""; // Para Microsoft Clarity si lo necesitas luego
 
 const C = {
   ink: '#0f172a', navy: '#1e293b', blue: BRAND.primary, teal: BRAND.secondary, 
@@ -37,7 +37,6 @@ function setFavicon() {
   link.href = BRAND.favicon;
 }
 
-// Inyector de Microsoft Clarity
 function injectClarity(id) {
   if (!id || typeof window === 'undefined') return;
   (function(c,l,a,r,i,t,y){
@@ -86,6 +85,7 @@ async function apiCall(action, params = {}) {
     formData.append('action', 'guardar');
     formData.append('data', JSON.stringify(params.data));
     if (params.id) formData.append('id', params.id); 
+    if (params.baseUrl) formData.append('baseUrl', params.baseUrl); 
     const r = await fetch(API, { method: 'POST', body: formData });
     return r.json();
   } else {
@@ -162,7 +162,6 @@ export default function App() {
   const [isManualLoading, setIsManualLoading] = useState(false); 
   
   const [webhookSentNotFound, setWebhookSentNotFound] = useState(false); 
-  const [webhookSentInvalid, setWebhookSentInvalid] = useState(false); 
   
   const [showMissing, setShowMissing] = useState(false); 
   const [showInvalid, setShowInvalid] = useState(false); 
@@ -174,7 +173,7 @@ export default function App() {
 
   useEffect(() => { 
     setFavicon(); 
-    injectClarity(CLARITY_ID); // Arranca Analytics/Clarity
+    injectClarity(CLARITY_ID); 
   }, []);
   
   useEffect(() => { if (isC && tab === 'propuesta') setTab('resumen'); }, [isC, tab]);
@@ -298,37 +297,35 @@ export default function App() {
     try {
       const datosSeguros = { ...editableData, meta: { logoUrl, responsable, comercialName, comentarios, pin, notFound: notFoundList, invalidCodes: invalidList } };
       const saveData = { nombre, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: colDtos, datos: datosSeguros };
-      
-      const r = await apiCall('guardar', { data: saveData, id: currentId });
+      const baseUrl = `${window.location.origin}${window.location.pathname}`;
+
+      const r = await apiCall('guardar', { data: saveData, id: currentId, baseUrl });
       if (r.error) throw new Error(r.error);
       
       setCurrentId(r.id); 
-      const base = `${window.location.origin}${window.location.pathname}?id=${r.id}`;
-      setShareUrl(`${base}&ref=client`); 
-      setCommercialUrl(`${base}&ref=admin`); 
+      setShareUrl(`${baseUrl}?id=${r.id}&ref=client`); 
+      setCommercialUrl(`${baseUrl}?id=${r.id}&ref=admin`); 
     } catch (e) { alert('Error: ' + e.message); }
     finally { setSaving(false); }
   }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable, comercialName, comentarios, pin, notFoundList, invalidList, currentId]);
 
+  // WEBHOOK: ENVÍA ARRAY DE OBJETOS PARA QUE N8N LO PROCESE FILA A FILA
   const handleSendWebhookNotFound = async () => {
     if(!N8N_WEBHOOK_URL) return;
     try {
+      // Creamos un array donde cada ISBN es un objeto individual
+      const payload = notFoundList.map(isbn => ({
+        colegio: nombre,
+        comercial: comercialName || 'No especificado',
+        fecha: new Date().toISOString(),
+        isbnFaltante: isbn
+      }));
+
       await fetch(N8N_WEBHOOK_URL, { 
         method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ tipo: 'ISBN_FALTANTES', colegio: nombre, comercial: comercialName, fecha: new Date().toISOString(), isbns: notFoundList }) 
+        body: JSON.stringify(payload) 
       });
       setWebhookSentNotFound(true);
-    } catch (e) { alert("Hubo un error al enviar a n8n."); }
-  };
-
-  const handleSendWebhookInvalid = async () => {
-    if(!N8N_WEBHOOK_URL) return;
-    try {
-      await fetch(N8N_WEBHOOK_URL, { 
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ tipo: 'CODIGOS_ROTOS', colegio: nombre, comercial: comercialName, fecha: new Date().toISOString(), codigos: invalidList }) 
-      });
-      setWebhookSentInvalid(true);
     } catch (e) { alert("Hubo un error al enviar a n8n."); }
   };
 
@@ -522,7 +519,7 @@ export default function App() {
                 {notFoundList.length > 0 && (
                   <div style={{ background: '#fef2f0', border: `1px solid ${C.coral}`, borderRadius: 16, padding: '20px', boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.1)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 }}>
-                      <h3 style={{ margin: 0, color: C.coral, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>⚠️ {notFoundList.length} ISBNs no encontrados</h3>
+                      <h3 style={{ margin: 0, color: C.coral, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>⚠️ {notFoundList.length} ISBNs ignorados (No en catálogo)</h3>
                       <button onClick={() => setShowMissing(!showMissing)} style={{ ...sty.btn2, borderColor: C.coral, color: C.coral, padding: '6px 12px', fontSize: 12, boxShadow: 'none' }}>
                         {showMissing ? "Ocultar" : "👀 Ver Listado"}
                       </button>
@@ -542,10 +539,8 @@ export default function App() {
                         {showInvalid ? "Ocultar" : "👀 Ver Códigos"}
                       </button>
                     </div>
+                    <p style={{fontSize: 13, color: C.slate, margin: '0 0 15px'}}>Informativo: Estos códigos no tienen 13 dígitos y han sido ignorados.</p>
                     {showInvalid && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, background: '#fff', padding: 15, borderRadius: 10, border: `1px solid ${C.accent}33`, marginBottom: 15 }}>{invalidList.map((i,x) => <span key={x} style={{fontSize:13, fontFamily:'monospace', background:'#fef3c7', padding:'4px 8px', borderRadius:6, color:'#b45309'}}>{i}</span>)}</div>}
-                    <button onClick={handleSendWebhookInvalid} disabled={webhookSentInvalid} style={{ ...sty.btn, background: webhookSentInvalid ? C.green : C.accent, width: '100%', padding: '10px' }}>
-                      {webhookSentInvalid ? "✅ Dudas enviadas" : "✉️ Consultar estos códigos por n8n"}
-                    </button>
                   </div>
                 )}
               </div>
@@ -591,9 +586,8 @@ export default function App() {
             {isC && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 15, marginBottom: 25, animation: 'fadeIn 0.3s' }}>
                 <KPI label="Facturación" value={fmt(calc.tv)} sub={`Estimada al ${probabilidad}%`} icon="💰" />
-                <KPI label="Gasto Operativo" value={fmt(calc.totalCostOp)} sub="Coste plataforma y logística" icon="⚙️" color={C.slate} />
+                <KPI label="Beneficio Deliber" value={fmt(calc.totalCostOp)} sub="Margen operativo" icon="⚙️" color={C.slate} />
                 <KPI label="Beneficio Colegio" value={fmt(calc.benColegio)} sub="Comisión + Rappel" icon="🏫" accent />
-                <KPI label="Beneficio Tienda" value={fmt(calc.comision)} sub="Neto Deliber" icon="📈" />
               </div>
             )}
 
@@ -772,7 +766,7 @@ export default function App() {
                 {!isC && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15, marginBottom: 25 }}>
                     <KPI label="Facturación Estimada" value={fmt(calc.tv)} sub={`De ${Math.round(calc.totalAlumnos * (probabilidad/100))} compras estimadas`} icon="💰" />
-                    <KPI label="Total Costes Centro" value={fmt(calc.tcc + calc.totalCostOp)} sub={`Material: ${fmt(calc.tcc)} | Op: ${fmt(calc.totalCostOp)}`} icon="📉" color={C.slate} />
+                    <KPI label="Total Costes Centro" value={fmt(calc.tcc + calc.totalCostOp)} sub={`Material: ${fmt(calc.tcc)}`} icon="📉" color={C.slate} />
                     <KPI label="Beneficio Colegio" value={fmt(calc.benColegio)} sub="Comisión + Rappel" icon="🏫" accent />
                   </div>
                 )}
