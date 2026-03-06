@@ -16,7 +16,7 @@ const BRAND = {
 };
 
 const COMMERCIAL_PIN = "1234"; 
-const API = "https://script.google.com/macros/s/AKfycbwCYoLIusztmA7AXeEx8HnVprZoQJFMW-vIslvmgFNdvzt_NoY5d8w9nNOLP2btQ0b0/exec";
+const API = "https://script.google.com/macros/s/AKfycbx6OQ3C3iYw9bGXtx82hZNlevQOZBp4u1aUuoHkQQeiIZKknKtcCJsAa6fI9Xbr1CJT/exec";
 const N8N_WEBHOOK_URL = "https://scholarumdigital.app.n8n.cloud/webhook/0c901ba1-fd9e-4a10-91f0-c5b612249163"; 
 const CLARITY_ID = ""; // Opcional: ID de Microsoft Clarity
 
