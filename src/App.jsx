@@ -344,23 +344,25 @@ export default function App() {
   }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable, comercialName, comentarios, pin, notFoundList, invalidList, currentId, pricingModel, editorialMargins]);
 
   // ENVÍO SECUENCIAL PARA QUE N8N LO PROCESE PERFECTO
-  const handleSendWebhookNotFound = async () => {
+const handleSendWebhookNotFound = async () => {
     if(!N8N_WEBHOOK_URL) return;
     try {
-      for (const isbn of notFoundList) {
-        await fetch(N8N_WEBHOOK_URL, { 
-          method: 'POST', 
-          headers: { 'Content-Type': 'application/json' }, 
-          body: JSON.stringify({ 
-            tipo: 'ISBN_FALTANTE', colegio: nombre, 
-            comercial: comercialName || 'No especificado', 
-            fecha: new Date().toISOString(), isbnFaltante: isbn 
-          }) 
-        });
-        await new Promise(r => setTimeout(r, 600)); // Espera 0.6s entre llamadas para engañar al anti-spam
-      }
+      // Volvemos al envío único: mandamos el array 'isbns' dentro del body
+      await fetch(N8N_WEBHOOK_URL, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ 
+          tipo: 'ISBN_FALTANTES', 
+          colegio: nombre, 
+          comercial: comercialName || 'No especificado', 
+          fecha: new Date().toISOString(), 
+          isbns: notFoundList 
+        }) 
+      });
       setWebhookSentNotFound(true);
-    } catch (e) { alert("Hubo un error al enviar a n8n."); }
+    } catch (e) { 
+      alert("Hubo un error al enviar a n8n."); 
+    }
   };
 
   const updateAlumnos = useCallback((isbn, val) => {
