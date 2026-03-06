@@ -18,7 +18,7 @@ const BRAND = {
 const COMMERCIAL_PIN = "1234"; 
 const API = "https://script.google.com/macros/s/AKfycbwCYoLIusztmA7AXeEx8HnVprZoQJFMW-vIslvmgFNdvzt_NoY5d8w9nNOLP2btQ0b0/exec";
 const N8N_WEBHOOK_URL = "https://scholarumdigital.app.n8n.cloud/webhook/0c901ba1-fd9e-4a10-91f0-c5b612249163"; 
-const CLARITY_ID = ""; // Para Microsoft Clarity si lo necesitas luego
+const CLARITY_ID = ""; 
 
 const C = {
   ink: '#0f172a', navy: '#1e293b', blue: BRAND.primary, teal: BRAND.secondary, 
@@ -309,22 +309,26 @@ export default function App() {
     finally { setSaving(false); }
   }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable, comercialName, comentarios, pin, notFoundList, invalidList, currentId]);
 
-  // WEBHOOK: ENVÍA ARRAY DE OBJETOS PARA QUE N8N LO PROCESE FILA A FILA
+  // ── FIX: BUCLE DE ENVÍOS A N8N PARA FILAS INDEPENDIENTES ──
   const handleSendWebhookNotFound = async () => {
     if(!N8N_WEBHOOK_URL) return;
     try {
-      // Creamos un array donde cada ISBN es un objeto individual
-      const payload = notFoundList.map(isbn => ({
-        colegio: nombre,
-        comercial: comercialName || 'No especificado',
-        fecha: new Date().toISOString(),
-        isbnFaltante: isbn
-      }));
-
-      await fetch(N8N_WEBHOOK_URL, { 
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(payload) 
+      // Disparamos una llamada fetch individual por cada ISBN que falta
+      const promesas = notFoundList.map(isbn => {
+        return fetch(N8N_WEBHOOK_URL, { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify({ 
+            tipo: 'ISBN_FALTANTE', 
+            colegio: nombre, 
+            comercial: comercialName || 'No especificado', 
+            fecha: new Date().toISOString(), 
+            isbnFaltante: isbn 
+          }) 
+        });
       });
+
+      await Promise.all(promesas); // Esperamos a que todos los envíos terminen
       setWebhookSentNotFound(true);
     } catch (e) { alert("Hubo un error al enviar a n8n."); }
   };
@@ -761,12 +765,13 @@ export default function App() {
               </div>
             )}
 
+            {/* 2. RESUMEN Y GRÁFICOS */}
             {tab === 'resumen' && (
               <div style={{ animation: 'fadeIn 0.3s' }}>
                 {!isC && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15, marginBottom: 25 }}>
                     <KPI label="Facturación Estimada" value={fmt(calc.tv)} sub={`De ${Math.round(calc.totalAlumnos * (probabilidad/100))} compras estimadas`} icon="💰" />
-                    <KPI label="Total Costes Centro" value={fmt(calc.tcc + calc.totalCostOp)} sub={`Material: ${fmt(calc.tcc)}`} icon="📉" color={C.slate} />
+                    <KPI label="Total Costes Centro" value={fmt(calc.tcc + calc.totalCostOp)} sub={`Material: ${fmt(calc.tcc)} | Op: ${fmt(calc.totalCostOp)}`} icon="📉" color={C.slate} />
                     <KPI label="Beneficio Colegio" value={fmt(calc.benColegio)} sub="Comisión + Rappel" icon="🏫" accent />
                   </div>
                 )}
@@ -803,6 +808,7 @@ export default function App() {
               </div>
             )}
 
+            {/* 3. DETALLE */}
             {tab === 'detalle' && (
               <div style={{...sty.card, animation: 'fadeIn 0.3s'}}>
                 
@@ -854,6 +860,7 @@ export default function App() {
               </div>
             )}
 
+            {/* 4. EDITORIALES Y RAPPEL */}
             {tab === 'editoriales' && (
               <div style={{...sty.card, animation: 'fadeIn 0.3s'}}>
                 <h3 style={{ marginTop: 0, fontSize: 24, color: C.navy, fontWeight: 800, letterSpacing: '-0.5px' }}>Descuentos y Rappel por Editorial</h3>
