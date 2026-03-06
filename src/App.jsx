@@ -347,14 +347,12 @@ export default function App() {
 const handleSendWebhookNotFound = async () => {
     if(!N8N_WEBHOOK_URL) return;
     try {
-      // Volvemos al envío único: mandamos el array 'isbns' dentro del body
       await fetch(N8N_WEBHOOK_URL, { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ 
-          tipo: 'ISBN_FALTANTES', 
           colegio: nombre, 
-          comercial: comercialName || 'No especificado', 
+          comercial: comercialName,
           fecha: new Date().toISOString(), 
           isbns: notFoundList 
         }) 
