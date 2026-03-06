@@ -15,17 +15,15 @@ const BRAND = {
   card: "#ffffff"        
 };
 
-// EQUIPO COMERCIAL
 const COMERCIALES = [
   "Marta Herruzo", "Roberto Cereijo", "Raúl Martínez", 
   "Andrea de Nobrega", "Ana Gómez", "Laura Rada", "Marta Caballero"
 ];
 
 const COMMERCIAL_PIN = "1234"; 
-// ⚠️ API RESTAURADA A TU ID ORIGINAL Y CORRECTO
 const API = "https://script.google.com/macros/s/AKfycbx6OQ3C3iYw9bGXtx82hZNlevQOZBp4u1aUuoHkQQeiIZKknKtcCJsAa6fI9Xbr1CJT/exec";
 const N8N_WEBHOOK_URL = "https://scholarumdigital.app.n8n.cloud/webhook/0c901ba1-fd9e-4a10-91f0-c5b612249163"; 
-const CLARITY_ID = ""; // Opcional: ID de Microsoft Clarity
+const CLARITY_ID = ""; 
 
 const C = {
   ink: '#0f172a', navy: '#1e293b', blue: BRAND.primary, teal: BRAND.secondary, 
@@ -54,33 +52,42 @@ function injectClarity(id) {
   })(window, document, "clarity", "script", id);
 }
 
+// PARSER MEJORADO: Quita guiones, lee ISBN-10 o 13, y suma repetidos
 function parseInput(text) {
   const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean);
   const entries = [];
   const invalid = []; 
-  const isbnRe = /97[89]\d{10}/g;
   
   for (const line of lines) {
-    const isbns = line.match(isbnRe);
+    let lineWithoutHyphens = line.replace(/-/g, ''); 
+    const isbns = lineWithoutHyphens.match(/(?:97[89])?\d{9}[\dX]/gi); 
+    
     if (!isbns) {
       if (/\d/.test(line) && line.length > 3 && line.length < 30) invalid.push(line);
       continue;
     }
     
-    let cleanLine = line;
+    let cleanLine = lineWithoutHyphens;
     isbns.forEach(i => { cleanLine = cleanLine.replace(i, ' '); });
     const numbers = [];
     const numRe = /\b(\d{1,3})\b/g;
     let m;
-    while ((m = numRe.exec(cleanLine)) !== null) if (m[1] > 0 && m[1] < 1000) numbers.push(parseInt(m[1]));
+    while ((m = numRe.exec(cleanLine)) !== null) {
+      const val = parseInt(m[1]);
+      if (val > 0 && val < 1000) numbers.push(val);
+    }
     
     for (let idx = 0; idx < isbns.length; idx++) {
-      const isbn = isbns[idx];
+      let isbn = isbns[idx].toUpperCase();
+      if (isbn.length === 10) isbn = '978' + isbn; // Convierte ISBN-10 a 13
       const alumnos = idx < numbers.length ? numbers[idx] : (numbers.length === 1 ? numbers[0] : 0);
       
       let existing = entries.find(e => e.isbn === isbn);
-      if (existing) existing.alumnos += alumnos;
-      else entries.push({ isbn, alumnos, curso: '' });
+      if (existing) {
+        existing.alumnos += alumnos; // SUMA CANTIDADES SI SE REPITE
+      } else {
+        entries.push({ isbn, alumnos, curso: '' });
+      }
     }
   }
   return { entries, invalid };
@@ -141,9 +148,8 @@ export default function App() {
   const [logoUrl, setLogoUrl] = useState('');
   const [comentarios, setComentarios] = useState(''); 
   
-  // ESTADOS DEL NUEVO TARIFICADOR DUAL
-  const [pricingModel, setPricingModel] = useState('global'); // 'global' o 'editorial'
-  const [editorialMargins, setEditorialMargins] = useState({}); // { 'Santillana': 15, 'SM': 10 }
+  const [pricingModel, setPricingModel] = useState('global'); 
+  const [editorialMargins, setEditorialMargins] = useState({}); 
   
   const [pin, setPin] = useState(''); 
   const [pinInput, setPinInput] = useState(''); 
@@ -173,7 +179,6 @@ export default function App() {
   const [isManualLoading, setIsManualLoading] = useState(false); 
   
   const [webhookSentNotFound, setWebhookSentNotFound] = useState(false); 
-  
   const [showMissing, setShowMissing] = useState(false); 
   const [showInvalid, setShowInvalid] = useState(false); 
   const fileRef = useRef(null);
@@ -215,7 +220,6 @@ export default function App() {
           setComentarios(meta.comentarios || '');
           setInvalidCodes(meta.invalidCodes || []);
           
-          // Recuperamos el modelo de tarificación y márgenes guardados
           setPricingModel(meta.pricingModel || 'global');
           setEditorialMargins(meta.editorialMargins || {});
           
@@ -252,6 +256,17 @@ export default function App() {
     }
   };
 
+  const handleNewProposal = () => {
+    if (step >= 2) {
+      if (!window.confirm("¿Seguro que quieres crear una nueva propuesta?\nLos cambios no guardados se perderán.")) return;
+    }
+    setStep(0); setCurrentId(''); setNombre(''); setResponsable(''); setComentarios(''); setLogoUrl('');
+    setInputText(''); setInvalidCodes([]); setData(null); setEditableData(null); setColDtos({});
+    setShareUrl(''); setCommercialUrl(''); setPricingModel('global'); setEditorialMargins({});
+    setWebhookSentNotFound(false);
+    window.history.replaceState({}, '', window.location.pathname);
+  };
+
   const handleCruzar = useCallback(async () => {
     const parsed = parseInput(inputText);
     if (!parsed.entries.length) { setError('No se detectaron ISBNs válidos (13 dígitos).'); return; }
@@ -282,9 +297,9 @@ export default function App() {
   const handleAddManualIsbn = async () => {
     if (!manualIsbn.trim()) return;
     const cleanIsbn = manualIsbn.replace(/[^0-9]/g, '');
-    if (cleanIsbn.length !== 13) { alert('El ISBN debe tener 13 dígitos numéricos.'); return; }
+    if (cleanIsbn.length !== 13 && cleanIsbn.length !== 10) { alert('El ISBN debe tener 10 o 13 dígitos numéricos.'); return; }
 
-    if (editableData?.found?.some(b => b.isbn === cleanIsbn)) {
+    if (editableData?.found?.some(b => b.isbn === cleanIsbn || b.isbn === '978'+cleanIsbn)) {
       alert('❌ Libro duplicado: Este ISBN ya está incluido en la propuesta.');
       return;
     }
@@ -310,7 +325,6 @@ export default function App() {
 
   const handleGuardar = useCallback(async () => {
     if (!editableData) return; setSaving(true);
-    
     try {
       const datosSeguros = { 
         ...editableData, 
@@ -320,33 +334,31 @@ export default function App() {
       const saveData = { nombre, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: colDtos, datos: datosSeguros };
 
       const r = await apiCall('guardar', { data: saveData, id: currentId, baseUrl });
-      
       if (r.error) throw new Error(r.error);
       
       setCurrentId(r.id); 
       setShareUrl(`${baseUrl}?id=${r.id}&ref=client`); 
       setCommercialUrl(`${baseUrl}?id=${r.id}&ref=admin`); 
-    } catch (e) { 
-      alert('Error al guardar: ' + e.message); 
-    }
+    } catch (e) { alert('Error al guardar: ' + e.message); }
     finally { setSaving(false); }
   }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable, comercialName, comentarios, pin, notFoundList, invalidList, currentId, pricingModel, editorialMargins]);
 
+  // ENVÍO SECUENCIAL PARA QUE N8N LO PROCESE PERFECTO
   const handleSendWebhookNotFound = async () => {
     if(!N8N_WEBHOOK_URL) return;
     try {
-      const payloadArray = notFoundList.map(isbn => ({
-        tipo: 'ISBN_FALTANTE',
-        colegio: nombre,
-        comercial: comercialName || 'No especificado',
-        fecha: new Date().toISOString(),
-        isbnFaltante: isbn
-      }));
-
-      await fetch(N8N_WEBHOOK_URL, { 
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(payloadArray) 
-      });
+      for (const isbn of notFoundList) {
+        await fetch(N8N_WEBHOOK_URL, { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify({ 
+            tipo: 'ISBN_FALTANTE', colegio: nombre, 
+            comercial: comercialName || 'No especificado', 
+            fecha: new Date().toISOString(), isbnFaltante: isbn 
+          }) 
+        });
+        await new Promise(r => setTimeout(r, 600)); // Espera 0.6s entre llamadas para engañar al anti-spam
+      }
       setWebhookSentNotFound(true);
     } catch (e) { alert("Hubo un error al enviar a n8n."); }
   };
@@ -360,7 +372,6 @@ export default function App() {
     const r = new FileReader(); r.onload = ev => setInputText(ev.target.result); r.readAsText(f);
   }, []);
 
-  // CÁLCULO CORE Y TARIFICADOR DUAL
   const calc = useMemo(() => {
     if (!editableData?.found) return null;
     const probSegura = parseFloat(probabilidad) || 0;
@@ -383,12 +394,11 @@ export default function App() {
       const opPct = (isPapel ? (parseFloat(costePapel) || 0) : (parseFloat(costeDigital) || 0)) / 100;
       
       const alumsEstimados = alumnos * probFactor;
-      const tv = alumsEstimados * pvp; // Total Venta
-      const tcs = alumsEstimados * coste; // Total Coste Scholarum
-      const tcc = alumsEstimados * costeCol; // Total Coste Colegio
-      const costOp = tv * opPct; // Coste Operativo (Global Mode)
+      const tv = alumsEstimados * pvp; 
+      const tcs = alumsEstimados * coste; 
+      const tcc = alumsEstimados * costeCol; 
+      const costOp = tv * opPct; 
       
-      // Cálculo para Modelo Editorial
       const provName = book.proveedor || 'Sin proveedor';
       const edMarginPct = parseFloat(editorialMargins[provName]) || 0;
       const bookSchoolMargin = tv * (edMarginPct / 100);
@@ -400,15 +410,12 @@ export default function App() {
     const tcs = rows.reduce((s, r) => s + (r.tcs || 0), 0);
     const tcc = rows.reduce((s, r) => s + (r.tcc || 0), 0);
     
-    // MODELO GLOBAL VARIABLES
     const totalCostOp = rows.reduce((s, r) => s + (r.costOp || 0), 0);
     const rap = tcs - tcc;
     const comision = tv - tcs - totalCostOp;
     
-    // MODELO EDITORIAL VARIABLES
     const totalSchoolMarginEd = rows.reduce((s, r) => s + (r.bookSchoolMargin || 0), 0);
 
-    // RESULTADOS FINALES SEGÚN MODELO ACTIVO
     const activeSchoolBenefit = pricingModel === 'global' ? (comision + rap) : totalSchoolMarginEd;
     const activeDeliberBenefit = pricingModel === 'global' ? totalCostOp : (tv - tcs - totalSchoolMarginEd);
     const activeDeliberMarginPct = tv > 0 ? ((activeDeliberBenefit / tv) * 100).toFixed(1) : 0;
@@ -462,12 +469,19 @@ export default function App() {
             </div>
           </div>
           
-          {isAuthenticated && step >= 2 && step !== 3 && (
-            <div style={{ display: 'flex', background: '#f1f5f9', padding: 4, borderRadius: 10, border: `1px solid ${C.muted}` }}>
-              <button onClick={() => setViewMode('comercial')} style={{ padding: '6px 14px', border: 'none', borderRadius: 8, background: isC ? '#fff' : 'transparent', color: isC ? C.blue : C.slate, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', fontSize: 13, boxShadow: isC ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>🔧 Comercial</button>
-              <button onClick={() => setViewMode('colegio')} style={{ padding: '6px 14px', border: 'none', borderRadius: 8, background: !isC ? '#fff' : 'transparent', color: !isC ? C.blue : C.slate, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', fontSize: 13, boxShadow: !isC ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>🏫 Vista Cliente</button>
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {isAuthenticated && (
+              <button onClick={handleNewProposal} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: C.blue, color: '#fff', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', fontSize: 13, boxShadow: '0 2px 4px rgba(37,99,235,0.2)' }}>
+                ➕ Nueva Propuesta
+              </button>
+            )}
+            {isAuthenticated && step >= 2 && step !== 3 && (
+              <div style={{ display: 'flex', background: '#f1f5f9', padding: 4, borderRadius: 10, border: `1px solid ${C.muted}` }}>
+                <button onClick={() => setViewMode('comercial')} style={{ padding: '6px 14px', border: 'none', borderRadius: 8, background: isC ? '#fff' : 'transparent', color: isC ? C.navy : C.slate, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', fontSize: 13, boxShadow: isC ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>🔧 Comercial</button>
+                <button onClick={() => setViewMode('colegio')} style={{ padding: '6px 14px', border: 'none', borderRadius: 8, background: !isC ? '#fff' : 'transparent', color: !isC ? C.navy : C.slate, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', fontSize: 13, boxShadow: !isC ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>🏫 Vista Cliente</button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -500,7 +514,7 @@ export default function App() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 20, marginBottom: 30, background: '#f8fafc', padding: 25, borderRadius: 16, border: `1px solid ${C.muted}` }}>
               <div>
                 <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: C.navy }}>👤 Comercial Responsable</label>
-                <select style={{...sty.input, appearance: 'none'}} value={comercialName} onChange={e => setComercialName(e.target.value)}>
+                <select style={{...sty.input}} value={comercialName} onChange={e => setComercialName(e.target.value)}>
                   <option value="">Selecciona tu nombre...</option>
                   {COMERCIALES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
@@ -553,6 +567,7 @@ export default function App() {
 
         {isAuthenticated && (step === 2 || step === 3) && calc && (
           <>
+            {/* ALERTAS: Faltantes y No Identificados */}
             {isC && (notFoundList.length > 0 || invalidList.length > 0) && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginBottom: 25 }}>
                 
@@ -566,7 +581,7 @@ export default function App() {
                     </div>
                     {showMissing && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, background: '#fff', padding: 15, borderRadius: 10, border: `1px solid ${C.coral}33`, marginBottom: 15 }}>{notFoundList.map((i,x) => <span key={x} style={{fontSize:13, fontFamily:'monospace', fontWeight:'600', color:C.coral}}>{i}</span>)}</div>}
                     <button onClick={handleSendWebhookNotFound} disabled={webhookSentNotFound} style={{ ...sty.btn, background: webhookSentNotFound ? C.green : C.coral, width: '100%', padding: '10px' }}>
-                      {webhookSentNotFound ? "✅ Avisado a Compras" : "✉️ Enviar listado a Compras (n8n)"}
+                      {webhookSentNotFound ? "✅ Avisado a Compras (n8n)" : "✉️ Enviar listado a Compras (n8n)"}
                     </button>
                   </div>
                 )}
@@ -579,7 +594,7 @@ export default function App() {
                         {showInvalid ? "Ocultar" : "👀 Ver Códigos"}
                       </button>
                     </div>
-                    <p style={{fontSize: 13, color: C.slate, margin: '0 0 15px'}}>Informativo: Estos códigos no tienen 13 dígitos y han sido ignorados. NO se envían a compras.</p>
+                    <p style={{fontSize: 13, color: C.slate, margin: '0 0 15px'}}>Informativo: Estos códigos no tienen la longitud correcta y han sido ignorados.</p>
                     {showInvalid && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, background: '#fff', padding: 15, borderRadius: 10, border: `1px solid ${C.accent}33` }}>{invalidList.map((i,x) => <span key={x} style={{fontSize:13, fontFamily:'monospace', background:'#fef3c7', padding:'4px 8px', borderRadius:6, color:'#b45309'}}>{i}</span>)}</div>}
                   </div>
                 )}
@@ -592,10 +607,7 @@ export default function App() {
                 
                 <div style={{ display: 'flex', gap: 40, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                   
-                  {/* BLOQUE IZQUIERDO: Tarificador Dual */}
                   <div style={{ flex: '1.5', minWidth: 350 }}>
-                    
-                    {/* Probabilidad Slider */}
                     <div style={{ marginBottom: 30, background: '#f8fafc', padding: '15px 20px', borderRadius: 12, border: `1px solid ${C.muted}` }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
                         <span style={{ fontWeight: 700, color: C.navy, fontSize: 15 }}>🎯 Probabilidad de Compra Base</span>
@@ -604,7 +616,6 @@ export default function App() {
                       <input type="range" min="10" max="100" step="5" value={probabilidad} onChange={e => setProbabilidad(+e.target.value)} style={{ width: '100%', cursor: 'pointer' }} />
                     </div>
 
-                    {/* Toggle Modelo Comercial */}
                     <div style={{ marginBottom: 20 }}>
                       <label style={{ fontWeight: 700, color: C.navy, fontSize: 15, display: 'block', marginBottom: 10 }}>Calculadora de Rentabilidad</label>
                       <div style={{ display: 'flex', background: '#f1f5f9', padding: 6, borderRadius: 12, border: `1px solid ${C.muted}`, width: 'fit-content' }}>
@@ -613,11 +624,10 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Vistas dinámicas del Tarificador */}
                     <div style={{ minHeight: 120 }}>
                       {pricingModel === 'global' ? (
                         <div style={{ animation: 'fadeIn 0.3s' }}>
-                          <p style={{ fontSize: 14, color: C.slate, marginBottom: 15 }}>El beneficio del colegio se calcula como la suma de la comisión (PVP - Coste - Logística) más el rappel asegurado.</p>
+                          <p style={{ fontSize: 14, color: C.slate, marginBottom: 15 }}>El beneficio del colegio se calcula sumando la comisión (PVP - Coste - Logística) más el rappel que negocien.</p>
                           <div style={{ display: 'flex', gap: 15, alignItems: 'center' }}>
                             <div style={{ background: '#fff', padding: '15px 20px', borderRadius: 12, border: `2px solid ${C.blue}33`, fontSize: 15, fontWeight: 600, color: C.navy, boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
                               📄 Gasto Op. Papel: <input type="number" value={costePapel} onChange={e => setCostePapel(+e.target.value)} style={{ width: 50, border: 'none', background:'transparent', outline: 'none', fontWeight: '800', color: C.blue, fontSize: 18, textAlign: 'center' }} />%
@@ -628,7 +638,7 @@ export default function App() {
                         </div>
                       ) : (
                         <div style={{ animation: 'fadeIn 0.3s' }}>
-                          <p style={{ fontSize: 14, color: C.slate, marginBottom: 15 }}>Asigna qué % de la Venta final se queda el colegio por cada editorial. Nosotros asumimos la logística con el resto del margen.</p>
+                          <p style={{ fontSize: 14, color: C.slate, marginBottom: 15 }}>Asigna qué % directo de la Venta final se queda el colegio por cada editorial.</p>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 15, maxHeight: 300, overflowY: 'auto', paddingRight: 10 }}>
                             {calc.prov.map(p => (
                               <div key={p.p} style={{ background: '#fff', padding: '12px 15px', borderRadius: 10, border: `1px solid ${C.muted}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
@@ -645,7 +655,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* BLOQUE DERECHO: Comentarios y Botón Guardar */}
                   <div style={{ flex: 1, minWidth: 300, display: 'flex', flexDirection: 'column' }}>
                     <label style={{ display: 'block', fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 14 }}>📝 Comentarios de la propuesta (Visibles para el cliente)</label>
                     <textarea 
@@ -661,7 +670,6 @@ export default function App() {
               </div>
             )}
 
-            {/* KPIS FIJOS EN MODO COMERCIAL (Dinámicos según el modelo de Pricing) */}
             {isC && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 15, marginBottom: 25, animation: 'fadeIn 0.3s' }}>
                 <KPI label="Facturación" value={fmt(calc.tv)} sub={`Estimada al ${probabilidad}%`} icon="💰" />
@@ -694,19 +702,20 @@ export default function App() {
               </div>
             )}
 
-            {/* PESTAÑAS */}
             <div style={{ display: 'flex', gap: 10, marginBottom: 25, flexWrap: 'wrap', borderBottom: `1px solid ${C.muted}`, paddingBottom: 20 }}>
               {!isC && <button onClick={() => setTab('propuesta')} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === 'propuesta' ? C.blue : '#fff', color: tab === 'propuesta' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: tab === 'propuesta' ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>Propuesta Integral</button>}
               {['resumen', 'detalle'].map(t => (
                 <button key={t} onClick={() => setTab(t)} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === t ? C.blue : '#fff', color: tab === t ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize', transition: 'all 0.2s', boxShadow: tab === t ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>{t}</button>
               ))}
-              {/* Ocultamos la pestaña de Editoriales y Rappel al colegio si estamos usando el modelo por Editorial Directo */}
+              
+              {/* Ocultar pestaña al colegio si es Modelo Editorial para que no se líen */}
               {(isC || pricingModel === 'global') && (
-                <button onClick={() => setTab('editoriales')} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === 'editoriales' ? C.blue : '#fff', color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: tab === 'editoriales' ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>Editoriales y Rappel</button>
+                <button onClick={() => setTab('editoriales')} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === 'editoriales' ? C.blue : '#fff', color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: tab === 'editoriales' ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>
+                  {pricingModel === 'global' ? 'Editoriales y Rappel' : 'Márgenes por Editorial'}
+                </button>
               )}
             </div>
 
-            {/* 1. PROPUESTA (CLIENTE) */}
             {!isC && tab === 'propuesta' && (
               <div style={{ animation: 'fadeIn 0.6s ease-out' }}>
                 
@@ -845,12 +854,12 @@ export default function App() {
               </div>
             )}
 
-            {/* 2. RESUMEN Y GRÁFICOS */}
             {tab === 'resumen' && (
               <div style={{ animation: 'fadeIn 0.3s' }}>
                 {!isC && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15, marginBottom: 25 }}>
                     <KPI label="Facturación Estimada" value={fmt(calc.tv)} sub={`De ${Math.round(calc.totalAlumnos * (probabilidad/100))} compras estimadas`} icon="💰" />
+                    <KPI label="Total Costes Centro" value={fmt(calc.tcc + calc.totalCostOp)} sub={`Material: ${fmt(calc.tcc)} | Op: ${fmt(calc.totalCostOp)}`} icon="📉" color={C.slate} />
                     <KPI label="Beneficio Colegio" value={fmt(calc.activeSchoolBenefit)} sub={pricingModel === 'global' ? "Comisión + Rappel" : "Margen directo s/ventas"} icon="🏫" accent />
                   </div>
                 )}
@@ -887,7 +896,6 @@ export default function App() {
               </div>
             )}
 
-            {/* 3. DETALLE */}
             {tab === 'detalle' && (
               <div style={{...sty.card, animation: 'fadeIn 0.3s'}}>
                 
@@ -925,12 +933,12 @@ export default function App() {
                           <td style={{ padding: '15px 20px', fontFamily: 'monospace', color: C.slate, fontSize: 13 }}>{r.isbn}</td>
                           <td style={{ padding: '15px 20px', fontWeight: 600, color: C.navy }}>{r.titulo}</td>
                           <td style={{ padding: '15px 20px', fontSize: 18, textAlign: 'center' }}>{r.isPapel ? '📄' : '💻'}</td>
-                          <td style={{ padding: '15px 20px', color: C.navy }}>{fmt(r.pvp)}</td>
+                          <td style={{ padding: '15px 20px', color: C.navy, whiteSpace: 'nowrap' }}>{fmt(r.pvp)}</td>
                           <td style={{ padding: '15px 20px', textAlign: 'center' }}>
                             <input type="number" value={r.alumnos} onChange={e => updateAlumnos(r.isbn, e.target.value)} disabled={!isC} style={{ width: 60, padding: 8, textAlign: 'center', border: `1px solid ${C.muted}`, borderRadius: 8, background: isC ? '#fff' : 'transparent', fontWeight: 'bold', color: C.navy }} />
                           </td>
                           <td style={{ padding: '15px 20px', textAlign: 'center', fontWeight: 800, color: C.teal, fontSize: 16 }}>{Math.round(r.alumsEstimados)}</td>
-                          <td style={{ padding: '15px 20px', textAlign: 'right', fontWeight: 800, color: C.navy }}>{fmt(r.tv)}</td>
+                          <td style={{ padding: '15px 20px', textAlign: 'right', fontWeight: 800, color: C.navy, whiteSpace: 'nowrap' }}>{fmt(r.tv)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -939,45 +947,79 @@ export default function App() {
               </div>
             )}
 
-            {/* 4. EDITORIALES Y RAPPEL (Solo disponible si el modelo es Global) */}
             {tab === 'editoriales' && (
               <div style={{...sty.card, animation: 'fadeIn 0.3s'}}>
-                <h3 style={{ marginTop: 0, fontSize: 24, color: C.navy, fontWeight: 800, letterSpacing: '-0.5px' }}>Descuentos y Rappel por Editorial</h3>
-                <p style={{ fontSize: 16, color: C.slate, marginBottom: 30, lineHeight: 1.6 }}>Compara los descuentos negociados por tu colegio con los de nuestra central de compras. Introduce tus márgenes actuales y descubre el Rappel (Beneficio) extra que te devolvemos.</p>
-                <div style={{ overflowX: 'auto', borderRadius: 12, border: `1px solid ${C.muted}`, boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15 }}>
-                    <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 10, boxShadow: '0 1px 0 rgba(0,0,0,0.05)' }}>
-                      <tr style={{ textAlign: 'left' }}>
-                        <th style={{ padding: '20px 25px', color: C.slate, fontWeight: 700 }}>Proveedor Principal</th>
-                        <th style={{ padding: '20px 25px', textAlign: 'center', color: C.slate, fontWeight: 700 }}>DTO {BRAND.name} (Calculado)</th>
-                        <th style={{ padding: '20px 25px', textAlign: 'center', color: C.teal, fontWeight: 800 }}>Tu Descuento Actual</th>
-                        <th style={{ padding: '20px 25px', textAlign: 'right', color: C.coral, fontWeight: 800 }}>Rappel a tu favor</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.keys(colDtos).sort().map((prov, i) => {
-                        const d = colDtos[prov];
-                        const dif = d.col > d.scho;
-                        const provCalc = calc.prov.find(p => p.p === prov);
-                        return (
-                          <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fcfcfc', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#f0fdfa'} onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#fcfcfc'}>
-                            <td style={{ padding: '20px 25px', fontWeight: 700, color: C.navy }}>{sh(prov)}</td>
-                            <td style={{ padding: '20px 25px', textAlign: 'center', color: C.slate, fontWeight: 600 }}>{d.scho}%</td>
-                            <td style={{ padding: '20px 25px', textAlign: 'center' }}>
-                              <div style={{ display: 'inline-flex', alignItems: 'center', background: '#fff', border: `2px solid ${dif ? C.teal : C.muted}`, borderRadius: 10, padding: '6px 12px', boxShadow: dif ? `0 0 0 4px ${C.teal}22` : '0 1px 2px rgba(0,0,0,0.05)', transition: 'all 0.2s' }}>
-                                <input type="number" value={d.col} onChange={e => setColDtos(p => ({ ...p, [prov]: { ...p[prov], col: +e.target.value } }))} style={{ width: 55, border: 'none', outline: 'none', textAlign: 'center', fontWeight: '800', fontSize: 18, color: dif ? C.teal : C.navy, background: 'transparent' }} />
-                                <span style={{ fontWeight: '800', color: dif ? C.teal : C.slate }}>%</span>
-                              </div>
-                            </td>
-                            <td style={{ padding: '20px 25px', textAlign: 'right', fontWeight: 800, color: (provCalc?.rap || 0) > 0 ? C.coral : C.slate, fontSize: 18 }}>
-                              {fmt(provCalc?.rap || 0)}
-                            </td>
+                {pricingModel === 'global' ? (
+                  <>
+                    <h3 style={{ marginTop: 0, fontSize: 24, color: C.navy, fontWeight: 800, letterSpacing: '-0.5px' }}>Descuentos y Rappel por Editorial</h3>
+                    <p style={{ fontSize: 16, color: C.slate, marginBottom: 30, lineHeight: 1.6 }}>Compara los descuentos negociados por tu colegio con los de nuestra central de compras. Introduce tus márgenes actuales y descubre el Rappel (Beneficio) extra que te devolvemos.</p>
+                    <div style={{ overflowX: 'auto', borderRadius: 12, border: `1px solid ${C.muted}`, boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15 }}>
+                        <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 10, boxShadow: '0 1px 0 rgba(0,0,0,0.05)' }}>
+                          <tr style={{ textAlign: 'left' }}>
+                            <th style={{ padding: '20px 25px', color: C.slate, fontWeight: 700 }}>Proveedor Principal</th>
+                            <th style={{ padding: '20px 25px', textAlign: 'center', color: C.slate, fontWeight: 700 }}>DTO {BRAND.name} (Calculado)</th>
+                            <th style={{ padding: '20px 25px', textAlign: 'center', color: C.teal, fontWeight: 800 }}>Tu Descuento Actual</th>
+                            <th style={{ padding: '20px 25px', textAlign: 'right', color: C.coral, fontWeight: 800 }}>Rappel a tu favor</th>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                        </thead>
+                        <tbody>
+                          {Object.keys(colDtos).sort().map((prov, i) => {
+                            const d = colDtos[prov];
+                            const dif = d.col > d.scho;
+                            const provCalc = calc.prov.find(p => p.p === prov);
+                            return (
+                              <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fcfcfc', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#f0fdfa'} onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#fcfcfc'}>
+                                <td style={{ padding: '20px 25px', fontWeight: 700, color: C.navy }}>{sh(prov)}</td>
+                                <td style={{ padding: '20px 25px', textAlign: 'center', color: C.slate, fontWeight: 600 }}>{d.scho}%</td>
+                                <td style={{ padding: '20px 25px', textAlign: 'center' }}>
+                                  <div style={{ display: 'inline-flex', alignItems: 'center', background: '#fff', border: `2px solid ${dif ? C.teal : C.muted}`, borderRadius: 10, padding: '6px 12px', boxShadow: dif ? `0 0 0 4px ${C.teal}22` : '0 1px 2px rgba(0,0,0,0.05)', transition: 'all 0.2s' }}>
+                                    <input type="number" value={d.col} onChange={e => setColDtos(p => ({ ...p, [prov]: { ...p[prov], col: +e.target.value } }))} disabled={!isC} style={{ width: 55, border: 'none', outline: 'none', textAlign: 'center', fontWeight: '800', fontSize: 18, color: dif ? C.teal : C.navy, background: 'transparent' }} />
+                                    <span style={{ fontWeight: '800', color: dif ? C.teal : C.slate }}>%</span>
+                                  </div>
+                                </td>
+                                <td style={{ padding: '20px 25px', textAlign: 'right', fontWeight: 800, color: (provCalc?.rap || 0) > 0 ? C.coral : C.slate, fontSize: 18 }}>
+                                  {fmt(provCalc?.rap || 0)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <h3 style={{ marginTop: 0, fontSize: 24, color: C.navy, fontWeight: 800, letterSpacing: '-0.5px' }}>Beneficio Directo por Editorial</h3>
+                    <p style={{ fontSize: 16, color: C.slate, marginBottom: 30, lineHeight: 1.6 }}>Desglose del margen de beneficio que percibe el colegio sobre las ventas estimadas de cada editorial.</p>
+                    <div style={{ overflowX: 'auto', borderRadius: 12, border: `1px solid ${C.muted}`, boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15 }}>
+                        <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 10, boxShadow: '0 1px 0 rgba(0,0,0,0.05)' }}>
+                          <tr style={{ textAlign: 'left' }}>
+                            <th style={{ padding: '20px 25px', color: C.slate, fontWeight: 700 }}>Proveedor Principal</th>
+                            <th style={{ padding: '20px 25px', textAlign: 'right', color: C.slate, fontWeight: 700 }}>Venta Estimada</th>
+                            <th style={{ padding: '20px 25px', textAlign: 'center', color: C.teal, fontWeight: 800 }}>% Margen Colegio</th>
+                            <th style={{ padding: '20px 25px', textAlign: 'right', color: C.coral, fontWeight: 800 }}>Beneficio Colegio</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {calc.prov.map((p, i) => {
+                            const edMarginPct = parseFloat(editorialMargins[p.p]) || 0;
+                            const benCol = p.tv * (edMarginPct / 100);
+                            return (
+                              <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fcfcfc', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#f0fdfa'} onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#fcfcfc'}>
+                                <td style={{ padding: '20px 25px', fontWeight: 700, color: C.navy }}>{sh(p.p)}</td>
+                                <td style={{ padding: '20px 25px', textAlign: 'right', color: C.navy }}>{fmt(p.tv)}</td>
+                                <td style={{ padding: '20px 25px', textAlign: 'center', fontWeight: 800, color: C.teal }}>{edMarginPct}%</td>
+                                <td style={{ padding: '20px 25px', textAlign: 'right', fontWeight: 800, color: C.coral }}>{fmt(benCol)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </>
