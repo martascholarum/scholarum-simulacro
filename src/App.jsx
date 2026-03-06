@@ -15,7 +15,14 @@ const BRAND = {
   card: "#ffffff"        
 };
 
+// EQUIPO COMERCIAL
+const COMERCIALES = [
+  "Marta Herruzo", "Roberto Cereijo", "Raúl Martínez", 
+  "Andrea de Nobrega", "Ana Gómez", "Laura Rada", "Marta Caballero"
+];
+
 const COMMERCIAL_PIN = "1234"; 
+// ⚠️ API RESTAURADA A TU ID ORIGINAL Y CORRECTO
 const API = "https://script.google.com/macros/s/AKfycbx6OQ3C3iYw9bGXtx82hZNlevQOZBp4u1aUuoHkQQeiIZKknKtcCJsAa6fI9Xbr1CJT/exec";
 const N8N_WEBHOOK_URL = "https://scholarumdigital.app.n8n.cloud/webhook/0c901ba1-fd9e-4a10-91f0-c5b612249163"; 
 const CLARITY_ID = ""; // Opcional: ID de Microsoft Clarity
@@ -134,6 +141,10 @@ export default function App() {
   const [logoUrl, setLogoUrl] = useState('');
   const [comentarios, setComentarios] = useState(''); 
   
+  // ESTADOS DEL NUEVO TARIFICADOR DUAL
+  const [pricingModel, setPricingModel] = useState('global'); // 'global' o 'editorial'
+  const [editorialMargins, setEditorialMargins] = useState({}); // { 'Santillana': 15, 'SM': 10 }
+  
   const [pin, setPin] = useState(''); 
   const [pinInput, setPinInput] = useState(''); 
   const [isAuthenticated, setIsAuthenticated] = useState(false); 
@@ -203,6 +214,11 @@ export default function App() {
           setComercialName(meta.comercialName || '');
           setComentarios(meta.comentarios || '');
           setInvalidCodes(meta.invalidCodes || []);
+          
+          // Recuperamos el modelo de tarificación y márgenes guardados
+          setPricingModel(meta.pricingModel || 'global');
+          setEditorialMargins(meta.editorialMargins || {});
+          
           if(meta.pin) setPin(meta.pin);
           
           const isClient = ref !== 'admin';
@@ -295,32 +311,30 @@ export default function App() {
   const handleGuardar = useCallback(async () => {
     if (!editableData) return; setSaving(true);
     
-    // CHIVATO PARA DEBUGGEAR LA ACTUALIZACIÓN
-    console.log("Intentando guardar. ID actual:", currentId);
-    
     try {
-      const datosSeguros = { ...editableData, meta: { logoUrl, responsable, comercialName, comentarios, pin, notFound: notFoundList, invalidCodes: invalidList } };
-      const saveData = { nombre, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: colDtos, datos: datosSeguros };
+      const datosSeguros = { 
+        ...editableData, 
+        meta: { logoUrl, responsable, comercialName, comentarios, pin, notFound: notFoundList, invalidCodes: invalidList, pricingModel, editorialMargins } 
+      };
       const baseUrl = `${window.location.origin}${window.location.pathname}`;
+      const saveData = { nombre, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: colDtos, datos: datosSeguros };
 
-      // AQUÍ LE ESTAMOS PASANDO EL currentId A GOOGLE
       const r = await apiCall('guardar', { data: saveData, id: currentId, baseUrl });
       
-      console.log("Respuesta de Google:", r);
       if (r.error) throw new Error(r.error);
       
       setCurrentId(r.id); 
       setShareUrl(`${baseUrl}?id=${r.id}&ref=client`); 
       setCommercialUrl(`${baseUrl}?id=${r.id}&ref=admin`); 
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { 
+      alert('Error al guardar: ' + e.message); 
+    }
     finally { setSaving(false); }
-  }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable, comercialName, comentarios, pin, notFoundList, invalidList, currentId]);
+  }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable, comercialName, comentarios, pin, notFoundList, invalidList, currentId, pricingModel, editorialMargins]);
 
-  // ── FIX: N8N AHORA RECIBE UN ARRAY DE OBJETOS PARA DIVIDIRLOS ──
   const handleSendWebhookNotFound = async () => {
     if(!N8N_WEBHOOK_URL) return;
     try {
-      // Creamos un array (lista) de JSONs. n8n detecta esto y lo divide en iteraciones automáticas.
       const payloadArray = notFoundList.map(isbn => ({
         tipo: 'ISBN_FALTANTE',
         colegio: nombre,
@@ -330,11 +344,9 @@ export default function App() {
       }));
 
       await fetch(N8N_WEBHOOK_URL, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify(payloadArray) 
       });
-      
       setWebhookSentNotFound(true);
     } catch (e) { alert("Hubo un error al enviar a n8n."); }
   };
@@ -348,6 +360,7 @@ export default function App() {
     const r = new FileReader(); r.onload = ev => setInputText(ev.target.result); r.readAsText(f);
   }, []);
 
+  // CÁLCULO CORE Y TARIFICADOR DUAL
   const calc = useMemo(() => {
     if (!editableData?.found) return null;
     const probSegura = parseFloat(probabilidad) || 0;
@@ -370,21 +383,35 @@ export default function App() {
       const opPct = (isPapel ? (parseFloat(costePapel) || 0) : (parseFloat(costeDigital) || 0)) / 100;
       
       const alumsEstimados = alumnos * probFactor;
-      const tv = alumsEstimados * pvp;
-      const tcs = alumsEstimados * coste;
-      const tcc = alumsEstimados * costeCol;
-      const costOp = tv * opPct;
+      const tv = alumsEstimados * pvp; // Total Venta
+      const tcs = alumsEstimados * coste; // Total Coste Scholarum
+      const tcc = alumsEstimados * costeCol; // Total Coste Colegio
+      const costOp = tv * opPct; // Coste Operativo (Global Mode)
+      
+      // Cálculo para Modelo Editorial
+      const provName = book.proveedor || 'Sin proveedor';
+      const edMarginPct = parseFloat(editorialMargins[provName]) || 0;
+      const bookSchoolMargin = tv * (edMarginPct / 100);
 
-      return { ...book, pvp, alumnos, tv, tcs, tcc, costOp, rap: tcs - tcc, isPapel, alumsEstimados };
+      return { ...book, pvp, alumnos, tv, tcs, tcc, costOp, rap: tcs - tcc, isPapel, alumsEstimados, bookSchoolMargin };
     });
 
     const tv = rows.reduce((s, r) => s + (r.tv || 0), 0);
     const tcs = rows.reduce((s, r) => s + (r.tcs || 0), 0);
     const tcc = rows.reduce((s, r) => s + (r.tcc || 0), 0);
+    
+    // MODELO GLOBAL VARIABLES
     const totalCostOp = rows.reduce((s, r) => s + (r.costOp || 0), 0);
     const rap = tcs - tcc;
     const comision = tv - tcs - totalCostOp;
-    const benColegio = comision + rap;
+    
+    // MODELO EDITORIAL VARIABLES
+    const totalSchoolMarginEd = rows.reduce((s, r) => s + (r.bookSchoolMargin || 0), 0);
+
+    // RESULTADOS FINALES SEGÚN MODELO ACTIVO
+    const activeSchoolBenefit = pricingModel === 'global' ? (comision + rap) : totalSchoolMarginEd;
+    const activeDeliberBenefit = pricingModel === 'global' ? totalCostOp : (tv - tcs - totalSchoolMarginEd);
+    const activeDeliberMarginPct = tv > 0 ? ((activeDeliberBenefit / tv) * 100).toFixed(1) : 0;
 
     const bp = {};
     rows.forEach(r => {
@@ -395,11 +422,8 @@ export default function App() {
     const prov = Object.values(bp).map(p => ({ ...p, m: p.tv - p.tcs, ben: (p.tv - p.tcs - p.costOp) + p.rap })).sort((a,b) => b.tv - a.tv);
     const totalAlumnos = rows.reduce((s, r) => s + (r.alumnos || 0), 0);
     
-    // CÁLCULO DEL % DEL MARGEN DE DELIBER
-    const deliberMarginPct = tv > 0 ? ((totalCostOp / tv) * 100).toFixed(1) : 0;
-
-    return { rows, prov, tv, tcs, tcc, totalCostOp, deliberMarginPct, comision, rap, benColegio, t: rows.length, totalAlumnos };
-  }, [editableData, colDtos, costePapel, costeDigital, probabilidad]);
+    return { rows, prov, tv, tcs, tcc, activeSchoolBenefit, activeDeliberBenefit, activeDeliberMarginPct, rap, t: rows.length, totalAlumnos };
+  }, [editableData, colDtos, costePapel, costeDigital, probabilidad, pricingModel, editorialMargins]);
 
   const filtered = calc?.rows.filter(r => !search || r.titulo?.toLowerCase().includes(search.toLowerCase()) || r.isbn?.includes(search)) || [];
 
@@ -416,7 +440,7 @@ export default function App() {
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        input:focus, textarea:focus { border-color: ${C.blue} !important; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        input:focus, textarea:focus, select:focus { border-color: ${C.blue} !important; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
       `}</style>
       
       <div style={{ padding: '20px 20px 0 20px', position: 'sticky', top: 0, zIndex: 100 }}>
@@ -475,8 +499,11 @@ export default function App() {
             
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 20, marginBottom: 30, background: '#f8fafc', padding: 25, borderRadius: 16, border: `1px solid ${C.muted}` }}>
               <div>
-                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: C.navy }}>👤 Tu Nombre (Comercial)</label>
-                <input style={sty.input} value={comercialName} onChange={e => setComercialName(e.target.value)} placeholder="Ej: Carlos Pérez" />
+                <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: C.navy }}>👤 Comercial Responsable</label>
+                <select style={{...sty.input, appearance: 'none'}} value={comercialName} onChange={e => setComercialName(e.target.value)}>
+                  <option value="">Selecciona tu nombre...</option>
+                  {COMERCIALES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: C.navy }}>🏫 Nombre del centro</label>
@@ -509,8 +536,8 @@ export default function App() {
             </div>
             {error && <div style={{ marginTop: 25, padding: '15px', background: '#fef2f0', color: C.coral, borderRadius: 10, fontWeight: 600, borderLeft: `4px solid ${C.coral}` }}>⚠️ {error}</div>}
             <div style={{ marginTop: 35, textAlign: 'right', borderTop: `1px solid ${C.muted}`, paddingTop: 25 }}>
-              <button onClick={handleCruzar} disabled={!inputText.trim() || !comercialName.trim()} style={{ ...sty.btn, opacity: (inputText.trim() && comercialName.trim()) ? 1 : 0.5, fontSize: 16, padding: '14px 32px' }}>
-                {!comercialName.trim() ? "Pon tu nombre para continuar" : "Cruzar datos y generar →"}
+              <button onClick={handleCruzar} disabled={!inputText.trim() || !comercialName} style={{ ...sty.btn, opacity: (inputText.trim() && comercialName) ? 1 : 0.5, fontSize: 16, padding: '14px 32px' }}>
+                {!comercialName ? "Selecciona comercial para continuar" : "Cruzar datos y generar →"}
               </button>
             </div>
           </div>
@@ -526,7 +553,6 @@ export default function App() {
 
         {isAuthenticated && (step === 2 || step === 3) && calc && (
           <>
-            {/* ALERTAS: Faltantes y No Identificados */}
             {isC && (notFoundList.length > 0 || invalidList.length > 0) && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginBottom: 25 }}>
                 
@@ -554,54 +580,93 @@ export default function App() {
                       </button>
                     </div>
                     <p style={{fontSize: 13, color: C.slate, margin: '0 0 15px'}}>Informativo: Estos códigos no tienen 13 dígitos y han sido ignorados. NO se envían a compras.</p>
-                    {showInvalid && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, background: '#fff', padding: 15, borderRadius: 10, border: `1px solid ${C.accent}33`, marginBottom: 15 }}>{invalidList.map((i,x) => <span key={x} style={{fontSize:13, fontFamily:'monospace', background:'#fef3c7', padding:'4px 8px', borderRadius:6, color:'#b45309'}}>{i}</span>)}</div>}
+                    {showInvalid && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, background: '#fff', padding: 15, borderRadius: 10, border: `1px solid ${C.accent}33` }}>{invalidList.map((i,x) => <span key={x} style={{fontSize:13, fontFamily:'monospace', background:'#fef3c7', padding:'4px 8px', borderRadius:6, color:'#b45309'}}>{i}</span>)}</div>}
                   </div>
                 )}
               </div>
             )}
 
             {isC && (
-              <div style={{ background: '#fff', padding: '25px', borderRadius: 16, marginBottom: 25, border: `1px solid ${C.blue}`, boxShadow: '0 4px 6px -1px rgba(37,99,235,0.1)' }}>
-                <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <div style={{ background: '#fff', padding: '30px', borderRadius: 16, marginBottom: 25, border: `1px solid ${C.blue}`, boxShadow: '0 4px 6px -1px rgba(37,99,235,0.1)' }}>
+                <h3 style={{ marginTop: 0, color: C.navy, borderBottom: `1px solid ${C.muted}`, paddingBottom: 15, marginBottom: 25 }}>⚙️ Configuración del Negocio</h3>
+                
+                <div style={{ display: 'flex', gap: 40, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                   
-                  <div style={{ flex: 1, minWidth: 300 }}>
-                    <div style={{ marginBottom: 20 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                        <span style={{ fontWeight: 700, color: C.blue, fontSize: 15 }}>🎯 Probabilidad de Compra Base</span>
-                        <span style={{ fontWeight: 800, color: C.blue, fontSize: 16 }}>{probabilidad}%</span>
+                  {/* BLOQUE IZQUIERDO: Tarificador Dual */}
+                  <div style={{ flex: '1.5', minWidth: 350 }}>
+                    
+                    {/* Probabilidad Slider */}
+                    <div style={{ marginBottom: 30, background: '#f8fafc', padding: '15px 20px', borderRadius: 12, border: `1px solid ${C.muted}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <span style={{ fontWeight: 700, color: C.navy, fontSize: 15 }}>🎯 Probabilidad de Compra Base</span>
+                        <span style={{ fontWeight: 800, color: C.blue, fontSize: 18 }}>{probabilidad}%</span>
                       </div>
                       <input type="range" min="10" max="100" step="5" value={probabilidad} onChange={e => setProbabilidad(+e.target.value)} style={{ width: '100%', cursor: 'pointer' }} />
                     </div>
-                    
-                    <div style={{ display: 'flex', gap: 15, alignItems: 'center' }}>
-                      <div style={{ background: '#f8fafc', padding: '10px 18px', borderRadius: 10, border: `1px solid ${C.muted}`, fontSize: 14, fontWeight: 600, color: C.navy, width: '100%' }}>
-                        📄 Op. Papel: <input type="number" value={costePapel} onChange={e => setCostePapel(+e.target.value)} style={{ width: 45, border: 'none', background:'transparent', outline: 'none', fontWeight: 'bold', color: C.blue, fontSize: 15 }} />%
-                        <span style={{ margin: '0 12px', color: C.muted }}>|</span>
-                        💻 Op. Digital: <input type="number" value={costeDigital} onChange={e => setCosteDigital(+e.target.value)} style={{ width: 45, border: 'none', background:'transparent', outline: 'none', fontWeight: 'bold', color: C.blue, fontSize: 15 }} />%
+
+                    {/* Toggle Modelo Comercial */}
+                    <div style={{ marginBottom: 20 }}>
+                      <label style={{ fontWeight: 700, color: C.navy, fontSize: 15, display: 'block', marginBottom: 10 }}>Calculadora de Rentabilidad</label>
+                      <div style={{ display: 'flex', background: '#f1f5f9', padding: 6, borderRadius: 12, border: `1px solid ${C.muted}`, width: 'fit-content' }}>
+                        <button onClick={() => setPricingModel('global')} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: pricingModel==='global' ? '#fff' : 'transparent', color: pricingModel==='global' ? C.blue : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: pricingModel==='global' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>🌍 % Global (Logística)</button>
+                        <button onClick={() => setPricingModel('editorial')} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: pricingModel==='editorial' ? '#fff' : 'transparent', color: pricingModel==='editorial' ? C.blue : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: pricingModel==='editorial' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>📚 % por Editorial</button>
                       </div>
+                    </div>
+
+                    {/* Vistas dinámicas del Tarificador */}
+                    <div style={{ minHeight: 120 }}>
+                      {pricingModel === 'global' ? (
+                        <div style={{ animation: 'fadeIn 0.3s' }}>
+                          <p style={{ fontSize: 14, color: C.slate, marginBottom: 15 }}>El beneficio del colegio se calcula como la suma de la comisión (PVP - Coste - Logística) más el rappel asegurado.</p>
+                          <div style={{ display: 'flex', gap: 15, alignItems: 'center' }}>
+                            <div style={{ background: '#fff', padding: '15px 20px', borderRadius: 12, border: `2px solid ${C.blue}33`, fontSize: 15, fontWeight: 600, color: C.navy, boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
+                              📄 Gasto Op. Papel: <input type="number" value={costePapel} onChange={e => setCostePapel(+e.target.value)} style={{ width: 50, border: 'none', background:'transparent', outline: 'none', fontWeight: '800', color: C.blue, fontSize: 18, textAlign: 'center' }} />%
+                              <span style={{ margin: '0 20px', color: C.muted }}>|</span>
+                              💻 Gasto Op. Digital: <input type="number" value={costeDigital} onChange={e => setCosteDigital(+e.target.value)} style={{ width: 50, border: 'none', background:'transparent', outline: 'none', fontWeight: '800', color: C.blue, fontSize: 18, textAlign: 'center' }} />%
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ animation: 'fadeIn 0.3s' }}>
+                          <p style={{ fontSize: 14, color: C.slate, marginBottom: 15 }}>Asigna qué % de la Venta final se queda el colegio por cada editorial. Nosotros asumimos la logística con el resto del margen.</p>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 15, maxHeight: 300, overflowY: 'auto', paddingRight: 10 }}>
+                            {calc.prov.map(p => (
+                              <div key={p.p} style={{ background: '#fff', padding: '12px 15px', borderRadius: 10, border: `1px solid ${C.muted}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                                <span style={{ fontSize: 14, fontWeight: 700, color: C.navy }} title={p.p}>{sh(p.p).substring(0, 16)}</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                  <input type="number" value={editorialMargins[p.p] || 0} onChange={e => setEditorialMargins(prev => ({...prev, [p.p]: +e.target.value}))} style={{ width: 50, padding: '6px', borderRadius: 6, border: `2px solid ${editorialMargins[p.p] > 0 ? C.teal : C.muted}`, textAlign: 'center', fontWeight: '800', color: editorialMargins[p.p] > 0 ? C.teal : C.slate, outline: 'none' }} />
+                                  <span style={{color: C.slate, fontWeight: 'bold'}}>%</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
+                  {/* BLOQUE DERECHO: Comentarios y Botón Guardar */}
                   <div style={{ flex: 1, minWidth: 300, display: 'flex', flexDirection: 'column' }}>
                     <label style={{ display: 'block', fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 14 }}>📝 Comentarios de la propuesta (Visibles para el cliente)</label>
                     <textarea 
                       value={comentarios} onChange={e => setComentarios(e.target.value)} 
-                      placeholder="Ej: No se han incluido los libros de lectura recomendada..." 
-                      style={{ ...sty.input, height: 80, resize: 'vertical', marginBottom: 15 }} 
+                      placeholder="Ej: Oferta válida hasta el 30 de Mayo. No se incluyen lecturas recomendadas..." 
+                      style={{ ...sty.input, flex: 1, minHeight: 120, resize: 'vertical', marginBottom: 20 }} 
                     />
-                    <button onClick={handleGuardar} style={{ ...sty.btn, background: `linear-gradient(to bottom, ${C.teal}, #0f766e)`, padding: '14px 24px', fontSize: 15, boxShadow: '0 4px 6px -1px rgba(13,148,136,0.2)', width: '100%' }}>
-                      {saving ? "⏳ Guardando..." : (currentId ? "💾 Actualizar Propuesta Actual" : "💾 Generar URLs de Cliente")}
+                    <button onClick={handleGuardar} style={{ ...sty.btn, background: `linear-gradient(to bottom, ${C.teal}, #0f766e)`, padding: '18px 24px', fontSize: 16, boxShadow: '0 4px 6px -1px rgba(13,148,136,0.3)', width: '100%' }}>
+                      {saving ? "⏳ Guardando..." : (currentId ? "💾 Actualizar Propuesta Actual" : "💾 Guardar y Generar URLs")}
                     </button>
                   </div>
                 </div>
               </div>
             )}
 
+            {/* KPIS FIJOS EN MODO COMERCIAL (Dinámicos según el modelo de Pricing) */}
             {isC && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 15, marginBottom: 25, animation: 'fadeIn 0.3s' }}>
                 <KPI label="Facturación" value={fmt(calc.tv)} sub={`Estimada al ${probabilidad}%`} icon="💰" />
-                <KPI label="Beneficio Deliber" value={fmt(calc.totalCostOp)} sub={`Margen Operativo (${calc.deliberMarginPct}%)`} icon="⚙️" color={C.slate} />
-                <KPI label="Beneficio Colegio" value={fmt(calc.benColegio)} sub="Comisión + Rappel" icon="🏫" accent />
+                <KPI label="Beneficio Deliber" value={fmt(calc.activeDeliberBenefit)} sub={`Margen Operativo Neto (${calc.activeDeliberMarginPct}%)`} icon="⚙️" color={C.slate} />
+                <KPI label="Beneficio Colegio" value={fmt(calc.activeSchoolBenefit)} sub={pricingModel === 'global' ? "Comisión + Rappel" : "Margen directo s/ventas"} icon="🏫" accent />
               </div>
             )}
 
@@ -617,7 +682,7 @@ export default function App() {
                       <span style={{ color: C.coral, background: '#fef2f0', padding: '4px 10px', borderRadius: 6, fontSize: 13, border: `1px solid ${C.coral}33` }}>PIN: <strong>{pin}</strong></span>
                     </div>
                     <a href={shareUrl} target="_blank" rel="noreferrer" style={{ color: C.blue, fontWeight: 700, wordBreak: 'break-all', fontSize: 15, textDecoration: 'none', borderBottom: `1px solid ${C.blue}55` }}>{shareUrl}</a>
-                    <p style={{ fontSize: 13, color: C.slate, margin: '15px 0 0', lineHeight: 1.5 }}>Envía este link y la contraseña al responsable del colegio.</p>
+                    <p style={{ fontSize: 13, color: C.slate, margin: '15px 0 0', lineHeight: 1.5 }}>Envía este link y el PIN al responsable del colegio.</p>
                   </div>
 
                   <div style={{ background: '#fff', padding: 25, borderRadius: 12, border: `1px solid ${C.muted}`, boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
@@ -629,14 +694,19 @@ export default function App() {
               </div>
             )}
 
+            {/* PESTAÑAS */}
             <div style={{ display: 'flex', gap: 10, marginBottom: 25, flexWrap: 'wrap', borderBottom: `1px solid ${C.muted}`, paddingBottom: 20 }}>
               {!isC && <button onClick={() => setTab('propuesta')} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === 'propuesta' ? C.blue : '#fff', color: tab === 'propuesta' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: tab === 'propuesta' ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>Propuesta Integral</button>}
               {['resumen', 'detalle'].map(t => (
                 <button key={t} onClick={() => setTab(t)} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === t ? C.blue : '#fff', color: tab === t ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize', transition: 'all 0.2s', boxShadow: tab === t ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>{t}</button>
               ))}
-              <button onClick={() => setTab('editoriales')} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === 'editoriales' ? C.blue : '#fff', color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: tab === 'editoriales' ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>Editoriales y Rappel</button>
+              {/* Ocultamos la pestaña de Editoriales y Rappel al colegio si estamos usando el modelo por Editorial Directo */}
+              {(isC || pricingModel === 'global') && (
+                <button onClick={() => setTab('editoriales')} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === 'editoriales' ? C.blue : '#fff', color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: tab === 'editoriales' ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>Editoriales y Rappel</button>
+              )}
             </div>
 
+            {/* 1. PROPUESTA (CLIENTE) */}
             {!isC && tab === 'propuesta' && (
               <div style={{ animation: 'fadeIn 0.6s ease-out' }}>
                 
@@ -703,8 +773,8 @@ export default function App() {
                     </div>
                     
                     <div style={{ display: 'flex', gap: 15, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <KPI label="Beneficio Estimado" value={fmt(calc.benColegio)} accent />
-                      {calc.rap > 0 && <KPI label="Rappel Garantizado" value={fmt(calc.rap)} sub="Por mejora de condiciones" color={C.coral} />}
+                      <KPI label="Beneficio Estimado" value={fmt(calc.activeSchoolBenefit)} accent />
+                      {pricingModel === 'global' && calc.rap > 0 && <KPI label="Rappel Garantizado" value={fmt(calc.rap)} sub="Por mejora de condiciones" color={C.coral} />}
                     </div>
                   </div>
                   <div style={{ borderTop: `1px solid ${C.muted}`, marginTop: 30, paddingTop: 20, textAlign: 'center' }}>
@@ -775,13 +845,13 @@ export default function App() {
               </div>
             )}
 
+            {/* 2. RESUMEN Y GRÁFICOS */}
             {tab === 'resumen' && (
               <div style={{ animation: 'fadeIn 0.3s' }}>
                 {!isC && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15, marginBottom: 25 }}>
                     <KPI label="Facturación Estimada" value={fmt(calc.tv)} sub={`De ${Math.round(calc.totalAlumnos * (probabilidad/100))} compras estimadas`} icon="💰" />
-                    <KPI label="Total Costes Centro" value={fmt(calc.tcc + calc.totalCostOp)} sub={`Material: ${fmt(calc.tcc)} | Op: ${fmt(calc.totalCostOp)}`} icon="📉" color={C.slate} />
-                    <KPI label="Beneficio Colegio" value={fmt(calc.benColegio)} sub="Comisión + Rappel" icon="🏫" accent />
+                    <KPI label="Beneficio Colegio" value={fmt(calc.activeSchoolBenefit)} sub={pricingModel === 'global' ? "Comisión + Rappel" : "Margen directo s/ventas"} icon="🏫" accent />
                   </div>
                 )}
 
@@ -817,6 +887,7 @@ export default function App() {
               </div>
             )}
 
+            {/* 3. DETALLE */}
             {tab === 'detalle' && (
               <div style={{...sty.card, animation: 'fadeIn 0.3s'}}>
                 
@@ -868,6 +939,7 @@ export default function App() {
               </div>
             )}
 
+            {/* 4. EDITORIALES Y RAPPEL (Solo disponible si el modelo es Global) */}
             {tab === 'editoriales' && (
               <div style={{...sty.card, animation: 'fadeIn 0.3s'}}>
                 <h3 style={{ marginTop: 0, fontSize: 24, color: C.navy, fontWeight: 800, letterSpacing: '-0.5px' }}>Descuentos y Rappel por Editorial</h3>
