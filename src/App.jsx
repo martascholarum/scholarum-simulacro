@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
 // ════════════════════════════════════════════════════════════════════
-// 1. 🎨 CONFIGURACIÓN DE TU MARCA (SaaS Moderno)
+// 1. 🎨 CONFIGURACIÓN DE TU MARCA
 // ════════════════════════════════════════════════════════════════════
 const BRAND = {
   name: "DELIBER",
@@ -36,20 +36,17 @@ function setFavicon() {
   link.href = BRAND.favicon;
 }
 
-// ── PARSER INTELIGENTE: Detecta ISBNs y Códigos Rotos ──
+// ── PARSER: Detecta ISBNs, suma unidades repetidas y guarda rotos ──
 function parseInput(text) {
   const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean);
   const entries = [];
-  const invalid = []; // Códigos no identificados
+  const invalid = []; 
   const isbnRe = /97[89]\d{10}/g;
   
   for (const line of lines) {
     const isbns = line.match(isbnRe);
     if (!isbns) {
-      // Si la línea tiene números y no es larguísima, la guardamos como "código no identificado"
-      if (/\d/.test(line) && line.length > 3 && line.length < 30) {
-        invalid.push(line);
-      }
+      if (/\d/.test(line) && line.length > 3 && line.length < 30) invalid.push(line);
       continue;
     }
     
@@ -63,7 +60,14 @@ function parseInput(text) {
     for (let idx = 0; idx < isbns.length; idx++) {
       const isbn = isbns[idx];
       const alumnos = idx < numbers.length ? numbers[idx] : (numbers.length === 1 ? numbers[0] : 0);
-      if (!entries.find(e => e.isbn === isbn)) entries.push({ isbn, alumnos, curso: '' });
+      
+      // SUMAR SI ESTÁ REPETIDO
+      let existing = entries.find(e => e.isbn === isbn);
+      if (existing) {
+        existing.alumnos += alumnos;
+      } else {
+        entries.push({ isbn, alumnos, curso: '' });
+      }
     }
   }
   return { entries, invalid };
@@ -74,6 +78,7 @@ async function apiCall(action, params = {}) {
     const formData = new URLSearchParams();
     formData.append('action', 'guardar');
     formData.append('data', JSON.stringify(params.data));
+    if (params.id) formData.append('id', params.id); // Pasamos el ID para actualizar
     const r = await fetch(API, { method: 'POST', body: formData });
     return r.json();
   } else {
@@ -92,7 +97,6 @@ function generatePIN() {
   return pin;
 }
 
-// Recalcula la media real de descuentos basándose en los libros encontrados
 function refreshDtosReal(foundArray, currentDtos) {
   const dtos = {};
   foundArray.forEach(b => {
@@ -105,18 +109,18 @@ function refreshDtosReal(foundArray, currentDtos) {
   Object.keys(dtos).forEach(prov => {
     const avg = Math.round(dtos[prov].sum / dtos[prov].count);
     if (!finalDtos[prov]) finalDtos[prov] = { scho: avg, col: avg };
-    else finalDtos[prov].scho = avg; // Actualiza solo nuestra media, respeta la edición del colegio
+    else finalDtos[prov].scho = avg; 
   });
   return finalDtos;
 }
 
 export default function App() {
   const [step, setStep] = useState(() => (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('id')) ? 1 : 98); 
+  const [currentId, setCurrentId] = useState(''); // Guarda el ID para sobrescribir
   
   const [loadingMsg, setLoadingMsg] = useState('Verificando acceso seguro...');
   const [loadingSubMsg, setLoadingSubMsg] = useState('Por favor, espera unos segundos.');
   
-  // ── CAMPOS DE PROPUESTA Y META ──
   const [nombre, setNombre] = useState('');
   const [responsable, setResponsable] = useState('');
   const [comercialName, setComercialName] = useState('');
@@ -128,7 +132,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false); 
   
   const [inputText, setInputText] = useState('');
-  const [invalidCodes, setInvalidCodes] = useState([]); // Códigos rotos
+  const [invalidCodes, setInvalidCodes] = useState([]); 
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -148,8 +152,12 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [manualIsbn, setManualIsbn] = useState('');
   const [manualAlumnos, setManualAlumnos] = useState('');
+  const [isManualLoading, setIsManualLoading] = useState(false); // Spinner de ISBN Manual
   
-  const [webhookSent, setWebhookSent] = useState(false); 
+  // ESTADOS SEPARADOS PARA WEBHOOKS
+  const [webhookSentNotFound, setWebhookSentNotFound] = useState(false); 
+  const [webhookSentInvalid, setWebhookSentInvalid] = useState(false); 
+  
   const [showMissing, setShowMissing] = useState(false); 
   const [showInvalid, setShowInvalid] = useState(false); 
   const fileRef = useRef(null);
@@ -166,6 +174,7 @@ export default function App() {
     const id = p.get('id'), ref = p.get('ref'); 
     
     if (id) {
+      setCurrentId(id);
       setLoadingMsg('Desempaquetando propuesta...');
       setLoadingSubMsg('No me he quedado tostao, estoy pensando 🧠');
       setLoading(true); 
@@ -224,7 +233,7 @@ export default function App() {
     const parsed = parseInput(inputText);
     if (!parsed.entries.length) { setError('No se detectaron ISBNs válidos (13 dígitos).'); return; }
     
-    setInvalidCodes(parsed.invalid); // Guardamos los códigos rotos
+    setInvalidCodes(parsed.invalid); 
 
     const newPin = pin || generatePIN();
     if(!pin) setPin(newPin);
@@ -247,15 +256,19 @@ export default function App() {
     finally { setLoading(false); }
   }, [inputText, pin]);
 
-  // ── FUNCIÓN: AÑADIR ISBN MANUAL EN DETALLE ──
+  // AÑADIR ISBN MANUAL + COMPROBACIÓN DUPLICADOS
   const handleAddManualIsbn = async () => {
     if (!manualIsbn.trim()) return;
     const cleanIsbn = manualIsbn.replace(/[^0-9]/g, '');
     if (cleanIsbn.length !== 13) { alert('El ISBN debe tener 13 dígitos numéricos.'); return; }
 
-    setLoadingMsg('Buscando nuevo ISBN...');
-    setLoadingSubMsg(`Comprobando ${cleanIsbn} en el Master DB`);
-    setLoading(true);
+    // Check Duplicado
+    if (editableData?.found?.some(b => b.isbn === cleanIsbn)) {
+      alert('❌ Libro duplicado: Este ISBN ya está incluido en la propuesta.');
+      return;
+    }
+
+    setIsManualLoading(true);
     try {
       const isbnsParam = `${cleanIsbn}:${parseInt(manualAlumnos) || 0}`;
       const r = await apiCall('cruzar', { isbns: isbnsParam });
@@ -264,16 +277,14 @@ export default function App() {
       setEditableData(prev => {
         const newFound = [...prev.found, ...(r.found || [])];
         const newNotFound = [...(prev.meta?.notFound || []), ...(r.notFound || [])];
-        
-        // Recalculamos la media real de dtos con el nuevo libro añadido
         setColDtos(currentDtos => refreshDtosReal(newFound, currentDtos));
-        
         return { ...prev, found: newFound, meta: { ...prev.meta, notFound: newNotFound } };
       });
       setManualIsbn(''); setManualAlumnos('');
-      alert(r.found.length ? '¡Libro añadido con éxito!' : 'ISBN no encontrado en el Master DB.');
+      if(r.found.length) alert('¡Libro añadido con éxito!');
+      else alert('⚠️ ISBN no encontrado en el Master DB.');
     } catch (e) { alert('Error: ' + e.message); }
-    finally { setLoading(false); }
+    finally { setIsManualLoading(false); }
   };
 
   const handleGuardar = useCallback(async () => {
@@ -281,30 +292,39 @@ export default function App() {
     try {
       const datosSeguros = { ...editableData, meta: { logoUrl, responsable, comercialName, comentarios, pin, notFound: notFoundList, invalidCodes: invalidList } };
       const saveData = { nombre, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: colDtos, datos: datosSeguros };
-      const r = await apiCall('guardar', { data: saveData });
+      
+      // Enviamos el currentId para que el backend lo sobrescriba
+      const r = await apiCall('guardar', { data: saveData, id: currentId });
       if (r.error) throw new Error(r.error);
       
+      setCurrentId(r.id); // Lo guardamos por si era nuevo
       const base = `${window.location.origin}${window.location.pathname}?id=${r.id}`;
       setShareUrl(`${base}&ref=client`); 
       setCommercialUrl(`${base}&ref=admin`); 
     } catch (e) { alert('Error: ' + e.message); }
     finally { setSaving(false); }
-  }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable, comercialName, comentarios, pin, notFoundList, invalidList]);
+  }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable, comercialName, comentarios, pin, notFoundList, invalidList, currentId]);
 
-  const handleSendWebhook = async () => {
+  // WEBHOOKS SEPARADOS
+  const handleSendWebhookNotFound = async () => {
     if(!N8N_WEBHOOK_URL) return;
     try {
       await fetch(N8N_WEBHOOK_URL, { 
         method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ 
-          colegio: nombre, 
-          comercial: comercialName || 'No especificado',
-          fecha: new Date().toISOString(), 
-          isbnsFaltantes: notFoundList,
-          codigosNoIdentificados: invalidList
-        }) 
+        body: JSON.stringify({ tipo: 'ISBN_FALTANTES', colegio: nombre, comercial: comercialName, fecha: new Date().toISOString(), isbns: notFoundList }) 
       });
-      setWebhookSent(true);
+      setWebhookSentNotFound(true);
+    } catch (e) { alert("Hubo un error al enviar a n8n."); }
+  };
+
+  const handleSendWebhookInvalid = async () => {
+    if(!N8N_WEBHOOK_URL) return;
+    try {
+      await fetch(N8N_WEBHOOK_URL, { 
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ tipo: 'CODIGOS_ROTOS', colegio: nombre, comercial: comercialName, fecha: new Date().toISOString(), codigos: invalidList }) 
+      });
+      setWebhookSentInvalid(true);
     } catch (e) { alert("Hubo un error al enviar a n8n."); }
   };
 
@@ -436,7 +456,6 @@ export default function App() {
           </div>
         )}
 
-        {/* PASO 0: CREACIÓN DE PROPUESTA (Añadido Nombre de Comercial) */}
         {isAuthenticated && step === 0 && (
           <div style={{...sty.card, animation: 'fadeIn 0.4s ease-out'}}>
             <h2 style={{ marginTop: 0, fontSize: 24, color: C.navy, borderBottom: `1px solid ${C.muted}`, paddingBottom: 20, fontWeight: 800 }}>Crear Nueva Propuesta</h2>
@@ -495,38 +514,43 @@ export default function App() {
 
         {isAuthenticated && (step === 2 || step === 3) && calc && (
           <>
-            {/* ALERTAS: Faltantes y No Identificados (Solo Comercial) */}
+            {/* ALERTAS: Faltantes y No Identificados CON BOTONES SEPARADOS */}
             {isC && (notFoundList.length > 0 || invalidList.length > 0) && (
-              <div style={{ display: 'flex', gap: 20, marginBottom: 25, flexWrap: 'wrap' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginBottom: 25 }}>
+                
                 {notFoundList.length > 0 && (
-                  <div style={{ flex: 1, minWidth: 300, background: '#fef2f0', border: `1px solid ${C.coral}`, borderRadius: 16, padding: '20px', boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.1)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
-                      <h3 style={{ margin: 0, color: C.coral, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>⚠️ {notFoundList.length} ISBNs en catálogo</h3>
-                      <button onClick={() => setShowMissing(!showMissing)} style={{ ...sty.btn2, padding: '6px 12px', fontSize: 12 }}>{showMissing ? "Ocultar" : "Ver Listado"}</button>
+                  <div style={{ background: '#fef2f0', border: `1px solid ${C.coral}`, borderRadius: 16, padding: '20px', boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.1)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 }}>
+                      <h3 style={{ margin: 0, color: C.coral, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>⚠️ {notFoundList.length} ISBNs ignorados (No en catálogo)</h3>
+                      <button onClick={() => setShowMissing(!showMissing)} style={{ ...sty.btn2, borderColor: C.coral, color: C.coral, padding: '6px 12px', fontSize: 12, boxShadow: 'none' }}>
+                        {showMissing ? "Ocultar" : "👀 Ver Listado"}
+                      </button>
                     </div>
-                    {showMissing && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, background: '#fff', padding: 12, borderRadius: 8 }}>{notFoundList.map((i,x) => <span key={x} style={{fontSize:12, fontFamily:'monospace'}}>{i}</span>)}</div>}
+                    {showMissing && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, background: '#fff', padding: 15, borderRadius: 10, border: `1px solid ${C.coral}33`, marginBottom: 15 }}>{notFoundList.map((i,x) => <span key={x} style={{fontSize:13, fontFamily:'monospace', fontWeight:'600', color:C.coral}}>{i}</span>)}</div>}
+                    <button onClick={handleSendWebhookNotFound} disabled={webhookSentNotFound} style={{ ...sty.btn, background: webhookSentNotFound ? C.green : C.coral, width: '100%', padding: '10px' }}>
+                      {webhookSentNotFound ? "✅ Avisado a Compras" : "✉️ Enviar listado a Compras (n8n)"}
+                    </button>
                   </div>
                 )}
                 
                 {invalidList.length > 0 && (
-                  <div style={{ flex: 1, minWidth: 300, background: '#fffbeb', border: `1px solid ${C.accent}`, borderRadius: 16, padding: '20px', boxShadow: '0 4px 6px -1px rgba(245, 158, 11, 0.1)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
-                      <h3 style={{ margin: 0, color: '#d97706', fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>❓ {invalidList.length} Códigos no válidos</h3>
-                      <button onClick={() => setShowInvalid(!showInvalid)} style={{ ...sty.btn2, padding: '6px 12px', fontSize: 12 }}>{showInvalid ? "Ocultar" : "Ver Listado"}</button>
+                  <div style={{ background: '#fffbeb', border: `1px solid ${C.accent}`, borderRadius: 16, padding: '20px', boxShadow: '0 4px 6px -1px rgba(245, 158, 11, 0.1)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 }}>
+                      <h3 style={{ margin: 0, color: '#d97706', fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>❓ {invalidList.length} Códigos rotos / No identificados</h3>
+                      <button onClick={() => setShowInvalid(!showInvalid)} style={{ ...sty.btn2, borderColor: C.accent, color: '#d97706', padding: '6px 12px', fontSize: 12, boxShadow: 'none' }}>
+                        {showInvalid ? "Ocultar" : "👀 Ver Códigos"}
+                      </button>
                     </div>
-                    {showInvalid && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, background: '#fff', padding: 12, borderRadius: 8 }}>{invalidList.map((i,x) => <span key={x} style={{fontSize:12, fontFamily:'monospace', background:'#fef3c7', padding:'4px 8px', borderRadius:4}}>{i}</span>)}</div>}
+                    {showInvalid && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, background: '#fff', padding: 15, borderRadius: 10, border: `1px solid ${C.accent}33`, marginBottom: 15 }}>{invalidList.map((i,x) => <span key={x} style={{fontSize:13, fontFamily:'monospace', background:'#fef3c7', padding:'4px 8px', borderRadius:6, color:'#b45309'}}>{i}</span>)}</div>}
+                    <button onClick={handleSendWebhookInvalid} disabled={webhookSentInvalid} style={{ ...sty.btn, background: webhookSentInvalid ? C.green : C.accent, width: '100%', padding: '10px' }}>
+                      {webhookSentInvalid ? "✅ Dudas enviadas" : "✉️ Consultar estos códigos por n8n"}
+                    </button>
                   </div>
                 )}
-
-                <div style={{ width: '100%', textAlign: 'right' }}>
-                   <button onClick={handleSendWebhook} disabled={webhookSent} style={{ ...sty.btn, background: webhookSent ? C.green : C.ink }}>
-                      {webhookSent ? "✅ Notificación enviada a Compras" : "✉️ Enviar informe de faltantes a Compras"}
-                   </button>
-                </div>
               </div>
             )}
 
-            {/* CONTROLES COMERCIALES (Probabilidad, Costes, y COMENTARIOS) */}
+            {/* CONTROLES COMERCIALES */}
             {isC && (
               <div style={{ background: '#fff', padding: '25px', borderRadius: 16, marginBottom: 25, border: `1px solid ${C.blue}`, boxShadow: '0 4px 6px -1px rgba(37,99,235,0.1)' }}>
                 <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', alignItems: 'flex-start' }}>
@@ -559,7 +583,7 @@ export default function App() {
                       style={{ ...sty.input, height: 80, resize: 'vertical', marginBottom: 15 }} 
                     />
                     <button onClick={handleGuardar} style={{ ...sty.btn, background: `linear-gradient(to bottom, ${C.teal}, #0f766e)`, padding: '14px 24px', fontSize: 15, boxShadow: '0 4px 6px -1px rgba(13,148,136,0.2)', width: '100%' }}>
-                      {saving ? "⏳ Guardando..." : "💾 Generar URLs de Cliente"}
+                      {saving ? "⏳ Guardando..." : (currentId ? "💾 Actualizar Propuesta Actual" : "💾 Generar URLs de Cliente")}
                     </button>
                   </div>
                 </div>
@@ -579,7 +603,7 @@ export default function App() {
             {shareUrl && commercialUrl && isC && (
               <div style={{ padding: 30, background: '#e8f5e9', borderRadius: 16, marginBottom: 30, border: '1px solid #bbf7d0', textAlign: 'center', animation: 'fadeIn 0.5s', boxShadow: '0 4px 6px -1px rgba(34,197,94,0.1)' }}>
                 <div style={{ fontSize: 35, marginBottom: 10 }}>🎉</div>
-                <strong style={{ color: C.green, fontSize: 22, fontWeight: 800 }}>¡Enlaces generados con éxito!</strong>
+                <strong style={{ color: C.green, fontSize: 22, fontWeight: 800 }}>¡Propuesta Guardada/Actualizada!</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginTop: 25, textAlign: 'left' }}>
                   
                   <div style={{ background: '#fff', padding: 25, borderRadius: 12, border: `1px solid ${C.muted}`, boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
@@ -647,7 +671,6 @@ export default function App() {
                   )}
                 </div>
 
-                {/* TARJETA DE COMENTARIOS DEL ASESOR (Visible si hay texto) */}
                 {comentarios && (
                   <div style={{ background: '#fff', borderLeft: `6px solid ${C.accent}`, padding: '25px 30px', borderRadius: 16, marginBottom: 40, boxShadow: '0 10px 25px rgba(0,0,0,0.03)' }}>
                     <h4 style={{ margin: '0 0 10px 0', color: C.navy, display: 'flex', alignItems: 'center', gap: 12, fontSize: 18 }}><span>💡</span> Nota de tu asesor comercial {comercialName ? `(${comercialName})` : ''}</h4>
@@ -748,7 +771,6 @@ export default function App() {
               </div>
             )}
 
-            {/* 2. RESUMEN Y GRÁFICOS */}
             {tab === 'resumen' && (
               <div style={{ animation: 'fadeIn 0.3s' }}>
                 {!isC && (
@@ -791,16 +813,17 @@ export default function App() {
               </div>
             )}
 
-            {/* 3. DETALLE (Añadido Input para meter libros manualmente) */}
             {tab === 'detalle' && (
               <div style={{...sty.card, animation: 'fadeIn 0.3s'}}>
                 
                 {isC && (
                   <div style={{ display: 'flex', gap: 15, alignItems: 'center', background: '#f8fafc', padding: 20, borderRadius: 16, border: `1px solid ${C.muted}`, marginBottom: 25, flexWrap: 'wrap' }}>
                     <span style={{fontWeight: 800, color: C.navy, fontSize: 15}}>➕ Añadir ISBN Manual:</span>
-                    <input value={manualIsbn} onChange={e=>setManualIsbn(e.target.value)} placeholder="Ej: 9788411826617" style={{...sty.input, width: 220, padding: '10px 15px'}} />
-                    <input type="number" value={manualAlumnos} onChange={e=>setManualAlumnos(e.target.value)} placeholder="Alumnos" style={{...sty.input, width: 110, padding: '10px 15px'}} />
-                    <button onClick={handleAddManualIsbn} style={{...sty.btn, padding: '10px 20px', background: C.teal, boxShadow: 'none'}}>Buscar e Incorporar</button>
+                    <input value={manualIsbn} onChange={e=>setManualIsbn(e.target.value)} placeholder="Ej: 9788411826617" style={{...sty.input, width: 200, padding: '10px 15px'}} />
+                    <input type="number" value={manualAlumnos} onChange={e=>setManualAlumnos(e.target.value)} placeholder="Alumnos" style={{...sty.input, width: 100, padding: '10px 15px'}} />
+                    <button onClick={handleAddManualIsbn} disabled={isManualLoading} style={{...sty.btn, padding: '10px 20px', background: C.teal, boxShadow: 'none'}}>
+                      {isManualLoading ? "Buscando..." : "Buscar e Incorporar"}
+                    </button>
                   </div>
                 )}
 
@@ -841,7 +864,6 @@ export default function App() {
               </div>
             )}
 
-            {/* 4. EDITORIALES Y RAPPEL */}
             {tab === 'editoriales' && (
               <div style={{...sty.card, animation: 'fadeIn 0.3s'}}>
                 <h3 style={{ marginTop: 0, fontSize: 24, color: C.navy, fontWeight: 800, letterSpacing: '-0.5px' }}>Descuentos y Rappel por Editorial</h3>
@@ -886,7 +908,6 @@ export default function App() {
         )}
       </div>
 
-      {/* FOOTER CORPORATIVO */}
       <div style={{ background: '#ffffff', borderTop: '1px solid #e2e8f0', padding: '50px 20px 40px', marginTop: 'auto' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', background: '#ffffff', border: '1px solid #f1f5f9', borderRadius: 20, padding: '30px', gap: 40, boxShadow: '0 10px 25px rgba(0,0,0,0.02)' }}>
