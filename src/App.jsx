@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
 // ════════════════════════════════════════════════════════════════════
-// 1. 🎨 CONFIGURACIÓN DE TU MARCA
+// 1. 🎨 CONFIGURACIÓN DE TU MARCA (SaaS Moderno)
 // ════════════════════════════════════════════════════════════════════
 const BRAND = {
   name: "DELIBER",
@@ -18,6 +18,7 @@ const BRAND = {
 const COMMERCIAL_PIN = "1234"; 
 const API = "https://script.google.com/macros/s/AKfycbwCYoLIusztmA7AXeEx8HnVprZoQJFMW-vIslvmgFNdvzt_NoY5d8w9nNOLP2btQ0b0/exec";
 const N8N_WEBHOOK_URL = "https://scholarumdigital.app.n8n.cloud/webhook/0c901ba1-fd9e-4a10-91f0-c5b612249163"; 
+const CLARITY_ID = ""; // 👈 PEGA AQUÍ TU ID DE MICROSOFT CLARITY PARA GRABAR SESIONES
 
 const C = {
   ink: '#0f172a', navy: '#1e293b', blue: BRAND.primary, teal: BRAND.secondary, 
@@ -36,7 +37,17 @@ function setFavicon() {
   link.href = BRAND.favicon;
 }
 
-// ── PARSER: Detecta ISBNs, suma unidades repetidas y guarda rotos ──
+// Inyector de Microsoft Clarity
+function injectClarity(id) {
+  if (!id || typeof window === 'undefined') return;
+  (function(c,l,a,r,i,t,y){
+      c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+      t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+      y=l.getElementsByTagName(r)[0];
+      if(y && y.parentNode) y.parentNode.insertBefore(t,y);
+  })(window, document, "clarity", "script", id);
+}
+
 function parseInput(text) {
   const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean);
   const entries = [];
@@ -61,13 +72,9 @@ function parseInput(text) {
       const isbn = isbns[idx];
       const alumnos = idx < numbers.length ? numbers[idx] : (numbers.length === 1 ? numbers[0] : 0);
       
-      // SUMAR SI ESTÁ REPETIDO
       let existing = entries.find(e => e.isbn === isbn);
-      if (existing) {
-        existing.alumnos += alumnos;
-      } else {
-        entries.push({ isbn, alumnos, curso: '' });
-      }
+      if (existing) existing.alumnos += alumnos;
+      else entries.push({ isbn, alumnos, curso: '' });
     }
   }
   return { entries, invalid };
@@ -78,7 +85,7 @@ async function apiCall(action, params = {}) {
     const formData = new URLSearchParams();
     formData.append('action', 'guardar');
     formData.append('data', JSON.stringify(params.data));
-    if (params.id) formData.append('id', params.id); // Pasamos el ID para actualizar
+    if (params.id) formData.append('id', params.id); 
     const r = await fetch(API, { method: 'POST', body: formData });
     return r.json();
   } else {
@@ -116,7 +123,7 @@ function refreshDtosReal(foundArray, currentDtos) {
 
 export default function App() {
   const [step, setStep] = useState(() => (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('id')) ? 1 : 98); 
-  const [currentId, setCurrentId] = useState(''); // Guarda el ID para sobrescribir
+  const [currentId, setCurrentId] = useState(''); 
   
   const [loadingMsg, setLoadingMsg] = useState('Verificando acceso seguro...');
   const [loadingSubMsg, setLoadingSubMsg] = useState('Por favor, espera unos segundos.');
@@ -152,9 +159,8 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [manualIsbn, setManualIsbn] = useState('');
   const [manualAlumnos, setManualAlumnos] = useState('');
-  const [isManualLoading, setIsManualLoading] = useState(false); // Spinner de ISBN Manual
+  const [isManualLoading, setIsManualLoading] = useState(false); 
   
-  // ESTADOS SEPARADOS PARA WEBHOOKS
   const [webhookSentNotFound, setWebhookSentNotFound] = useState(false); 
   const [webhookSentInvalid, setWebhookSentInvalid] = useState(false); 
   
@@ -166,7 +172,11 @@ export default function App() {
   const notFoundList = editableData?.meta?.notFound || data?.notFound || []; 
   const invalidList = editableData?.meta?.invalidCodes || invalidCodes || [];
 
-  useEffect(() => { setFavicon(); }, []);
+  useEffect(() => { 
+    setFavicon(); 
+    injectClarity(CLARITY_ID); // Arranca Analytics/Clarity
+  }, []);
+  
   useEffect(() => { if (isC && tab === 'propuesta') setTab('resumen'); }, [isC, tab]);
 
   useEffect(() => {
@@ -177,7 +187,6 @@ export default function App() {
       setCurrentId(id);
       setLoadingMsg('Desempaquetando propuesta...');
       setLoadingSubMsg('No me he quedado tostao, estoy pensando 🧠');
-      setLoading(true); 
       
       apiCall('cargar', { id })
         .then(res => {
@@ -208,8 +217,7 @@ export default function App() {
             setStep(98); 
           }
         })
-        .catch(e => { setError(e.message); setStep(0); })
-        .finally(() => setLoading(false));
+        .catch(e => { setError(e.message); setStep(0); });
     }
   }, []);
 
@@ -256,13 +264,11 @@ export default function App() {
     finally { setLoading(false); }
   }, [inputText, pin]);
 
-  // AÑADIR ISBN MANUAL + COMPROBACIÓN DUPLICADOS
   const handleAddManualIsbn = async () => {
     if (!manualIsbn.trim()) return;
     const cleanIsbn = manualIsbn.replace(/[^0-9]/g, '');
     if (cleanIsbn.length !== 13) { alert('El ISBN debe tener 13 dígitos numéricos.'); return; }
 
-    // Check Duplicado
     if (editableData?.found?.some(b => b.isbn === cleanIsbn)) {
       alert('❌ Libro duplicado: Este ISBN ya está incluido en la propuesta.');
       return;
@@ -293,11 +299,10 @@ export default function App() {
       const datosSeguros = { ...editableData, meta: { logoUrl, responsable, comercialName, comentarios, pin, notFound: notFoundList, invalidCodes: invalidList } };
       const saveData = { nombre, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: colDtos, datos: datosSeguros };
       
-      // Enviamos el currentId para que el backend lo sobrescriba
       const r = await apiCall('guardar', { data: saveData, id: currentId });
       if (r.error) throw new Error(r.error);
       
-      setCurrentId(r.id); // Lo guardamos por si era nuevo
+      setCurrentId(r.id); 
       const base = `${window.location.origin}${window.location.pathname}?id=${r.id}`;
       setShareUrl(`${base}&ref=client`); 
       setCommercialUrl(`${base}&ref=admin`); 
@@ -305,7 +310,6 @@ export default function App() {
     finally { setSaving(false); }
   }, [editableData, nombre, costePapel, costeDigital, probabilidad, colDtos, logoUrl, responsable, comercialName, comentarios, pin, notFoundList, invalidList, currentId]);
 
-  // WEBHOOKS SEPARADOS
   const handleSendWebhookNotFound = async () => {
     if(!N8N_WEBHOOK_URL) return;
     try {
@@ -405,7 +409,6 @@ export default function App() {
         input:focus, textarea:focus { border-color: ${C.blue} !important; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
       `}</style>
       
-      {/* CABECERA SAAS */}
       <div style={{ padding: '20px 20px 0 20px', position: 'sticky', top: 0, zIndex: 100 }}>
         <div style={{ 
           background: 'rgba(255, 255, 255, 0.85)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
@@ -503,7 +506,6 @@ export default function App() {
           </div>
         )}
 
-        {/* SPINNER */}
         {step === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '50vh', animation: 'fadeIn 0.4s' }}>
             <div style={{ width: 60, height: 60, border: `4px solid ${C.muted}`, borderTopColor: C.blue, borderRadius: '50%', animation: 'spin 1s linear infinite', marginBottom: 25 }}></div>
@@ -514,14 +516,13 @@ export default function App() {
 
         {isAuthenticated && (step === 2 || step === 3) && calc && (
           <>
-            {/* ALERTAS: Faltantes y No Identificados CON BOTONES SEPARADOS */}
             {isC && (notFoundList.length > 0 || invalidList.length > 0) && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginBottom: 25 }}>
                 
                 {notFoundList.length > 0 && (
                   <div style={{ background: '#fef2f0', border: `1px solid ${C.coral}`, borderRadius: 16, padding: '20px', boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.1)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 }}>
-                      <h3 style={{ margin: 0, color: C.coral, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>⚠️ {notFoundList.length} ISBNs ignorados (No en catálogo)</h3>
+                      <h3 style={{ margin: 0, color: C.coral, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>⚠️ {notFoundList.length} ISBNs no encontrados</h3>
                       <button onClick={() => setShowMissing(!showMissing)} style={{ ...sty.btn2, borderColor: C.coral, color: C.coral, padding: '6px 12px', fontSize: 12, boxShadow: 'none' }}>
                         {showMissing ? "Ocultar" : "👀 Ver Listado"}
                       </button>
@@ -536,7 +537,7 @@ export default function App() {
                 {invalidList.length > 0 && (
                   <div style={{ background: '#fffbeb', border: `1px solid ${C.accent}`, borderRadius: 16, padding: '20px', boxShadow: '0 4px 6px -1px rgba(245, 158, 11, 0.1)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 }}>
-                      <h3 style={{ margin: 0, color: '#d97706', fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>❓ {invalidList.length} Códigos rotos / No identificados</h3>
+                      <h3 style={{ margin: 0, color: '#d97706', fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>❓ {invalidList.length} Códigos rotos / Inválidos</h3>
                       <button onClick={() => setShowInvalid(!showInvalid)} style={{ ...sty.btn2, borderColor: C.accent, color: '#d97706', padding: '6px 12px', fontSize: 12, boxShadow: 'none' }}>
                         {showInvalid ? "Ocultar" : "👀 Ver Códigos"}
                       </button>
@@ -550,12 +551,10 @@ export default function App() {
               </div>
             )}
 
-            {/* CONTROLES COMERCIALES */}
             {isC && (
               <div style={{ background: '#fff', padding: '25px', borderRadius: 16, marginBottom: 25, border: `1px solid ${C.blue}`, boxShadow: '0 4px 6px -1px rgba(37,99,235,0.1)' }}>
                 <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                   
-                  {/* Bloque Izquierdo: Sliders */}
                   <div style={{ flex: 1, minWidth: 300 }}>
                     <div style={{ marginBottom: 20 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -574,7 +573,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Bloque Derecho: Comentarios y Botón Guardar */}
                   <div style={{ flex: 1, minWidth: 300, display: 'flex', flexDirection: 'column' }}>
                     <label style={{ display: 'block', fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 14 }}>📝 Comentarios de la propuesta (Visibles para el cliente)</label>
                     <textarea 
@@ -590,11 +588,10 @@ export default function App() {
               </div>
             )}
 
-            {/* KPIS FIJOS EN MODO COMERCIAL */}
             {isC && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 15, marginBottom: 25, animation: 'fadeIn 0.3s' }}>
                 <KPI label="Facturación" value={fmt(calc.tv)} sub={`Estimada al ${probabilidad}%`} icon="💰" />
-                <KPI label="Total Costes Centro" value={fmt(calc.tcc + calc.totalCostOp)} sub={`Material: ${fmt(calc.tcc)}`} icon="📉" color={C.slate} />
+                <KPI label="Gasto Operativo" value={fmt(calc.totalCostOp)} sub="Coste plataforma y logística" icon="⚙️" color={C.slate} />
                 <KPI label="Beneficio Colegio" value={fmt(calc.benColegio)} sub="Comisión + Rappel" icon="🏫" accent />
                 <KPI label="Beneficio Tienda" value={fmt(calc.comision)} sub="Neto Deliber" icon="📈" />
               </div>
@@ -603,7 +600,7 @@ export default function App() {
             {shareUrl && commercialUrl && isC && (
               <div style={{ padding: 30, background: '#e8f5e9', borderRadius: 16, marginBottom: 30, border: '1px solid #bbf7d0', textAlign: 'center', animation: 'fadeIn 0.5s', boxShadow: '0 4px 6px -1px rgba(34,197,94,0.1)' }}>
                 <div style={{ fontSize: 35, marginBottom: 10 }}>🎉</div>
-                <strong style={{ color: C.green, fontSize: 22, fontWeight: 800 }}>¡Propuesta Guardada/Actualizada!</strong>
+                <strong style={{ color: C.green, fontSize: 22, fontWeight: 800 }}>¡Propuesta Guardada / Actualizada!</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginTop: 25, textAlign: 'left' }}>
                   
                   <div style={{ background: '#fff', padding: 25, borderRadius: 12, border: `1px solid ${C.muted}`, boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
@@ -632,7 +629,6 @@ export default function App() {
               <button onClick={() => setTab('editoriales')} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === 'editoriales' ? C.blue : '#fff', color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: tab === 'editoriales' ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>Editoriales y Rappel</button>
             </div>
 
-            {/* 1. PROPUESTA (CLIENTE) */}
             {!isC && tab === 'propuesta' && (
               <div style={{ animation: 'fadeIn 0.6s ease-out' }}>
                 
