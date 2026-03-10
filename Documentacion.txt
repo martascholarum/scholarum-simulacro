@@ -1,0 +1,43 @@
+1. Roles y Accesos (Seguridad)
+
+Comercial (Admin): Entra con PIN fijo (1234). Puede crear, editar, enviar a n8n y cambiar el modelo de negocio.
+
+Colegio (Cliente): Entra con PIN aleatorio (6 dígitos). Solo puede ver la propuesta sin poder editar ni enviar webhooks.
+
+2. Parseador de Textos (El Motor de Entrada)
+
+Lee bloques de texto pegados o archivos (CSV/TXT).
+
+Detecta ISBNs de 13 dígitos y de 10 dígitos (y convierte los de 10 a 13 añadiendo "978").
+
+Ignora guiones dentro de los ISBNs.
+
+Detecta el primer número pequeño posterior al ISBN como "cantidad de alumnos".
+
+Si un ISBN se repite en el texto, suma las cantidades.
+
+Los códigos raros (entre 4 y 30 caracteres pero que no son ISBN) van a un cajón de "Códigos no válidos".
+
+3. Tarificador Dual (Calculadora Financiera)
+
+Modelo A (Global): Se aplica un % de logística (Papel y Digital). Beneficio Colegio = (Total Venta - Total Coste - Gasto Op) + Rappel.
+
+Modelo B (Editorial): Se aplica un % manual por cada sello editorial. Beneficio Colegio = Suma de (Venta Editorial * % Asignado). Se oculta el concepto "Rappel" al cliente.
+
+4. Interfaz y Módulos (Vistas)
+
+Propuesta: Landing page emocional de venta para el colegio.
+
+Resumen: Dashboard visual con gráficas de barras y tarta de la venta por editorial.
+
+Detalle: Tabla completa con ISBNs. Permite añadir ISBNs manualmente y alerta si están duplicados.
+
+Editoriales: Tabla de márgenes/rappels adaptada al modelo (Global o Editorial).
+
+5. Conexiones Externas
+
+Google Apps Script (DB): Cruza datos (/cruzar), guarda/actualiza propuestas (/guardar sobrescribiendo ID) y carga propuestas (/cargar).
+
+n8n (Webhook): Envío de un JSON único con { colegio, comercial, fecha, isbns: [...] } para que n8n lo separe con un Item Lists.
+
+Microsoft Clarity: Inyectado al inicio para grabar sesiones.
