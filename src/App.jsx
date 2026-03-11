@@ -13,6 +13,14 @@ import { Header, Footer } from "./components/Layout";
 import { AuthScreens } from "./components/AuthScreens";
 import { CreationForm } from "./components/CreationForm";
 
+const CURSOS_DISPONIBLES = [
+  '1º de Educación Infantil', '2º de Educación Infantil', '3º de Educación Infantil',
+  '4º de Educación Infantil', '5º de Educación Infantil', '6º de Educación Infantil',
+  '1º de Educación Primaria', '2º de Educación Primaria', '3º de Educación Primaria',
+  '4º de Educación Primaria', '5º de Educación Primaria', '6º de Educación Primaria',
+  '1º de ESO', '2º de ESO', '3º de ESO', '4º de ESO',
+];
+
 export default function App() {
   const [step, setStep] = useState(() => (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('id')) ? 1 : 98); 
   const [currentId, setCurrentId] = useState(''); 
@@ -55,6 +63,12 @@ export default function App() {
   const [manualIsbn, setManualIsbn] = useState('');
   const [manualAlumnos, setManualAlumnos] = useState('');
   const [isManualLoading, setIsManualLoading] = useState(false); 
+  // NUEVOS ESTADOS PARA LOS CURSOS
+  const [cursos, setCursos] = useState([]); 
+  const [asignarPorCurso, setAsignarPorCurso] = useState(false);
+  const [showCursosPopup, setShowCursosPopup] = useState(false);
+  const [tempCursoNombre, setTempCursoNombre] = useState('');
+  const [tempCursoAlumnos, setTempCursoAlumnos] = useState('');
   
   const [webhookSentNotFound, setWebhookSentNotFound] = useState(false); 
   const [showMissing, setShowMissing] = useState(false); 
@@ -146,7 +160,7 @@ export default function App() {
   };
 
   const handleCruzar = useCallback(async () => {
-    const parsed = parseInput(inputText);
+    const parsed = parseInput(inputText, asignarPorCurso);
     if (!parsed.entries.length) { setError('No se detectaron ISBNs válidos (13 dígitos).'); return; }
     
     setInvalidCodes(parsed.invalid); 
@@ -154,21 +168,63 @@ export default function App() {
     if(!pin) setPin(newPin);
 
     setLoadingMsg('Marta Caballero está haciendo su magia... ✨');
-    setLoadingSubMsg('Cruzando libros con el catálogo maestro');
+    setLoadingSubMsg(asignarPorCurso ? 'Cruzando libros y auto-asignando cursos...' : 'Cruzando libros con el catálogo maestro');
     setLoading(true); setError(''); setStep(1);
     try {
       const isbnStr = parsed.entries.map(e => `${e.isbn}:${e.alumnos}`).join(',');
       const r = await apiCall('cruzar', { isbns: isbnStr });
       if (r.error) throw new Error(r.error);
       
-      const datosCompletos = { ...r, meta: { notFound: r.notFound, invalidCodes: parsed.invalid } };
+      const enhancedNotFound = (r.notFound || []).map(isbn => {
+        const entry = parsed.entries.find(e => e.isbn === isbn);
+        return entry && entry.context ? `${isbn} - ${entry.context}` : isbn;
+      });
+
+      // MAGIA DE AUTO-ASIGNACIÓN
+      let librosFinales = r.found;
+      if (asignarPorCurso && cursos.length > 0) {
+        librosFinales = r.found.map(book => {
+          const entry = parsed.entries.find(e => e.isbn === book.isbn);
+          const searchTxt = (book.titulo || '').replace(/[ºª]/g, '').toLowerCase();
+          
+          const matched = cursos.find(c => searchTxt.includes(c.nombre.replace(/[ºª]/g, '').toLowerCase()));
+          return matched 
+            ? { ...book, cursoId: matched.id, alumnos: matched.alumnos, context: entry?.context } 
+            : { ...book, cursoId: null, alumnos: 1, context: entry?.context };
+        });
+      }
+      
+      const datosCompletos = { ...r, found: librosFinales, meta: { notFound: enhancedNotFound, invalidCodes: parsed.invalid, cursos } };
       setData(datosCompletos); setEditableData(datosCompletos);
-      setColDtos(refreshDtosReal(r.found, {})); 
-      setStep(2); setTab('resumen');
+      setColDtos(refreshDtosReal(librosFinales, {})); 
+      setStep(2); setTab(asignarPorCurso ? 'cursos' : 'resumen'); // Si usa cursos, le llevamos a esa pestaña
     } catch (e) { setError(e.message); setStep(0); }
     finally { setLoading(false); }
-  }, [inputText, pin]);
+  }, [inputText, pin, asignarPorCurso, cursos]);
+const handleAddCurso = () => {
+    if (!tempCursoNombre || !tempCursoAlumnos) return;
+    const nuevoCurso = { id: Date.now().toString(), nombre: tempCursoNombre, alumnos: parseInt(tempCursoAlumnos) };
+    setCursos([...cursos, nuevoCurso]);
+    setTempCursoNombre(''); setTempCursoAlumnos('');
+  };
 
+  const updateCursoGlobal = (cursoId, nuevosAlumnos) => {
+    const num = parseInt(nuevosAlumnos) || 0;
+    setCursos(prev => prev.map(c => c.id === cursoId ? { ...c, alumnos: num } : c));
+    setEditableData(prev => ({
+      ...prev,
+      found: prev.found.map(b => b.cursoId === cursoId ? { ...b, alumnos: num } : b)
+    }));
+  };
+
+  const asignarCursoALibro = (isbn, cursoId) => {
+    const cursoObj = cursos.find(c => c.id === cursoId);
+    const alumnosAsignar = cursoObj ? cursoObj.alumnos : 1;
+    setEditableData(prev => ({
+      ...prev,
+      found: prev.found.map(b => b.isbn === isbn ? { ...b, cursoId, alumnos: alumnosAsignar } : b)
+    }));
+  };
   const handleAddManualIsbn = async () => {
     if (!manualIsbn.trim()) return;
     const cleanIsbn = manualIsbn.replace(/[^0-9]/g, '');
@@ -221,15 +277,18 @@ export default function App() {
   const handleSendWebhookNotFound = async () => {
     if(!N8N_WEBHOOK_URL) return;
     try {
-      for (const isbn of notFoundList) {
-        await fetch(N8N_WEBHOOK_URL, { 
-          method: 'POST', 
-          headers: { 'Content-Type': 'application/json' }, 
-          body: JSON.stringify({ 
-            tipo: 'ISBN_FALTANTE', colegio: nombre, 
-            comercial: comercialName || 'No especificado', 
-            fecha: new Date().toISOString(), isbnFaltante: isbn 
-          }) 
+      for (const item of notFoundList) {
+        const dashIdx = item.indexOf(' - ');
+        const isbnFaltante = dashIdx > -1 ? item.substring(0, dashIdx) : item;
+        const contexto = dashIdx > -1 ? item.substring(dashIdx + 3) : '';
+        await fetch(N8N_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tipo: 'ISBN_FALTANTE', colegio: nombre,
+            comercial: comercialName || 'No especificado',
+            fecha: new Date().toISOString(), isbnFaltante, contexto
+          })
         });
         await new Promise(r => setTimeout(r, 600)); 
       }
@@ -268,7 +327,7 @@ export default function App() {
         <AuthScreens step={step} pinInput={pinInput} setPinInput={setPinInput} handleLogin={handleLogin} />
 
         {isAuthenticated && step === 0 && (
-          <CreationForm 
+          <CreationForm
             comercialName={comercialName} setComercialName={setComercialName}
             nombre={nombre} setNombre={setNombre}
             responsable={responsable} setResponsable={setResponsable}
@@ -276,6 +335,8 @@ export default function App() {
             inputText={inputText} setInputText={setInputText}
             fileRef={fileRef} handleFile={handleFile}
             error={error} handleCruzar={handleCruzar}
+            asignarPorCurso={asignarPorCurso} setAsignarPorCurso={setAsignarPorCurso}
+            cursos={cursos} setShowCursosPopup={setShowCursosPopup}
           />
         )}
 
@@ -375,8 +436,8 @@ export default function App() {
                   </div>
                 </div>
               </div>
+              
             )}
-
             {isC && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 15, marginBottom: 25, animation: 'fadeIn 0.3s' }}>
                 <KPI label="Facturación" value={fmt(calc.tv)} sub={`Estimada al ${probabilidad}%`} icon="💰" />
@@ -415,6 +476,11 @@ export default function App() {
                   {pricingModel === 'global' ? 'Editoriales y Rappel' : 'Márgenes por Editorial'}
                 </button>
               )}
+              {isC && (
+                <button onClick={() => setTab('cursos')} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === 'cursos' ? C.blue : '#fff', color: tab === 'cursos' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: tab === 'cursos' ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>
+                  Cursos {cursos.length > 0 ? `(${cursos.length})` : ''}
+                </button>
+              )}
             </div>
 
             {!isC && tab === 'propuesta' && (
@@ -431,7 +497,7 @@ export default function App() {
 
                 {comentarios && (
                   <div style={{ background: '#fff', borderLeft: `6px solid ${C.accent}`, padding: '25px 30px', borderRadius: 16, marginBottom: 40, boxShadow: '0 10px 25px rgba(0,0,0,0.03)' }}>
-                    <h4 style={{ margin: '0 0 10px 0', color: C.navy, display: 'flex', alignItems: 'center', gap: 12, fontSize: 18 }}><span>💡</span> Nota de tu asesor comercial {comercialName ? `(${comercialName})` : ''}</h4>
+                    <h4 style={{ margin: '0 0 10px 0', color: C.navy, display: 'flex', alignItems: 'center', gap: 12, fontSize: 18 }}><span>💡</span> Observaciones sobre la propuesta</h4>
                     <p style={{ margin: 0, color: C.slate, lineHeight: 1.7, fontSize: 16, whiteSpace: 'pre-wrap' }}>{comentarios}</p>
                   </div>
                 )}
@@ -531,6 +597,83 @@ export default function App() {
               </div>
             )}
 
+            {tab === 'cursos' && isC && (
+              <div style={{ animation: 'fadeIn 0.3s', display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 25, alignItems: 'start' }}>
+                <div style={sty.card}>
+                  <h3 style={{ marginTop: 0, color: C.navy, fontWeight: 800, fontSize: 18, marginBottom: 20 }}>Gestor de Cursos</h3>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 15 }}>
+                    <select value={tempCursoNombre} onChange={e => setTempCursoNombre(e.target.value)} style={{ flex: 2, ...sty.input }}>
+                      <option value="">Selecciona curso...</option>
+                      {CURSOS_DISPONIBLES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <input type="number" placeholder="Alumnos" value={tempCursoAlumnos} onChange={e => setTempCursoAlumnos(e.target.value)} style={{ flex: 1, ...sty.input }} />
+                    <button onClick={handleAddCurso} style={{ ...sty.btn, background: C.teal, padding: '0 16px', fontSize: 20 }}>+</button>
+                  </div>
+                  {cursos.length === 0 ? (
+                    <p style={{ color: C.slate, fontSize: 14, textAlign: 'center', padding: '20px 0', margin: 0 }}>Sin cursos configurados. Añade uno arriba.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {cursos.map(c => (
+                        <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 15px', background: '#f8fafc', borderRadius: 10, border: `1px solid ${C.muted}` }}>
+                          <span style={{ fontWeight: 700, color: C.navy }}>{c.nombre}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <input
+                              type="number"
+                              value={c.alumnos}
+                              onChange={e => updateCursoGlobal(c.id, e.target.value)}
+                              style={{ width: 65, padding: '6px 8px', borderRadius: 6, border: `1px solid ${C.muted}`, textAlign: 'center', fontWeight: 700, outline: 'none' }}
+                            />
+                            <span style={{ fontSize: 13, color: C.slate }}>alumnos</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div style={sty.card}>
+                  <h3 style={{ marginTop: 0, color: C.navy, fontWeight: 800, fontSize: 18, marginBottom: 20 }}>Asignador de Libros</h3>
+                  <div style={{ overflowX: 'auto', borderRadius: 12, border: `1px solid ${C.muted}` }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 10 }}>
+                        <tr>
+                          <th style={{ padding: '12px 15px', color: C.slate, textAlign: 'left', fontWeight: 700 }}>ISBN</th>
+                          <th style={{ padding: '12px 15px', color: C.slate, textAlign: 'left', fontWeight: 700 }}>Título / Contexto</th>
+                          <th style={{ padding: '12px 15px', color: C.slate, textAlign: 'center', fontWeight: 700 }}>Curso asignado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...(editableData?.found || [])].sort((a, b) => {
+                          if (a.cursoId === null && b.cursoId !== null) return -1;
+                          if (a.cursoId !== null && b.cursoId === null) return 1;
+                          return 0;
+                        }).map((book, i) => (
+                          <tr key={book.isbn} style={{ borderBottom: `1px solid ${C.muted}`, background: book.cursoId === null ? '#fff9ed' : (i % 2 === 0 ? '#fff' : '#fcfcfc') }}>
+                            <td style={{ padding: '12px 15px', fontFamily: 'monospace', color: C.slate, fontSize: 11 }}>{book.isbn}</td>
+                            <td style={{ padding: '12px 15px', color: C.navy, fontWeight: 600 }}>
+                              {book.titulo || '—'}
+                              {book.cursoId === null && <span style={{ marginLeft: 8, fontSize: 11, color: C.coral, background: '#fef2f0', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>Pendiente</span>}
+                            </td>
+                            <td style={{ padding: '12px 15px', textAlign: 'center' }}>
+                              <select
+                                value={book.cursoId || ''}
+                                onChange={e => asignarCursoALibro(book.isbn, e.target.value || null)}
+                                style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${C.muted}`, background: '#fff', color: C.navy, fontWeight: 600, cursor: 'pointer', outline: 'none' }}
+                              >
+                                <option value="">Sin asignar</option>
+                                {cursos.map(c => (
+                                  <option key={c.id} value={c.id}>{c.nombre} ({c.alumnos})</option>
+                                ))}
+                              </select>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {tab === 'editoriales' && (
               <div style={{...sty.card, animation: 'fadeIn 0.3s'}}>
                 {pricingModel === 'global' ? (
@@ -604,6 +747,38 @@ export default function App() {
       </div>
 
       <Footer />
+      {showCursosPopup && (
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: 'white', padding: 30, borderRadius: 16, width: 400, maxWidth: '90%' }}>
+        <h3 style={{ marginTop: 0, color: C.navy }}>Configurar Cursos</h3>
+        <p style={{ fontSize: 13, color: C.slate }}>Añade los cursos antes de cruzar para que la IA los asigne automáticamente.</p>
+        
+        <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+          <select value={tempCursoNombre} onChange={e => setTempCursoNombre(e.target.value)} style={{ flex: 2, padding: 8, borderRadius: 6, border: '1px solid #ccc' }}>
+            <option value="">Selecciona curso...</option>
+            {CURSOS_DISPONIBLES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <input type="number" placeholder="Alumnos" value={tempCursoAlumnos} onChange={e => setTempCursoAlumnos(e.target.value)} style={{ flex: 1, padding: 8, borderRadius: 6, border: '1px solid #ccc' }} />
+          <button onClick={handleAddCurso} style={{ background: C.teal, color: 'white', border: 'none', borderRadius: 6, padding: '0 15px', cursor: 'pointer', fontWeight: 'bold' }}>+</button>
+        </div>
+
+        {cursos.length > 0 && (
+          <div style={{ background: '#f8fafc', borderRadius: 8, padding: 10, maxHeight: 200, overflowY: 'auto', marginBottom: 20 }}>
+            {cursos.map(c => (
+              <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #eee' }}>
+                <strong>{c.nombre}</strong>
+                <span>{c.alumnos} alumnos</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button onClick={() => setShowCursosPopup(false)} style={{ width: '100%', padding: 12, background: C.blue, color: 'white', border: 'none', borderRadius: 8, fontWeight: 'bold', cursor: 'pointer' }}>
+          Listo, cerrar
+        </button>
+      </div>
+    </div>
+  )}
     </div>
   );
 }

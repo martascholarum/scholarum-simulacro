@@ -18,7 +18,7 @@ export function injectClarity(id) {
   })(window, document, "clarity", "script", id);
 }
 
-export function parseInput(text) {
+export function parseInput(text, asignarPorCurso = false) {
   const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean);
   const entries = [];
   const invalid = []; 
@@ -42,15 +42,23 @@ export function parseInput(text) {
       if (val > 0 && val < 1000) numbers.push(val);
     }
     
+    let contextText = cleanLine;
+    numbers.forEach(n => { contextText = contextText.replace(new RegExp(`\\b${n}\\b`), ' '); });
+    contextText = contextText.replace(/\s+/g, ' ').trim();
+    
     for (let idx = 0; idx < isbns.length; idx++) {
       let isbn = isbns[idx].toUpperCase();
       if (isbn.length === 10) isbn = '978' + isbn; 
-      // MEJORA 1: Si no hay número, ponemos 1 en lugar de 0
-      const alumnos = idx < numbers.length ? numbers[idx] : (numbers.length === 1 ? numbers[0] : 1);
+      
+      // LA MAGIA: Si el comercial marcó la casilla de cursos, ignoramos los números pegados y ponemos 1.
+      const alumnos = asignarPorCurso ? 1 : (idx < numbers.length ? numbers[idx] : (numbers.length === 1 ? numbers[0] : 1));
       
       let existing = entries.find(e => e.isbn === isbn);
-      if (existing) existing.alumnos += alumnos;
-      else entries.push({ isbn, alumnos, curso: '' });
+      if (existing) {
+        existing.alumnos += alumnos;
+        if (contextText && !existing.context) existing.context = contextText;
+      }
+      else entries.push({ isbn, alumnos, context: contextText });
     }
   }
   return { entries, invalid };
