@@ -45,7 +45,8 @@ export function parseInput(text) {
     for (let idx = 0; idx < isbns.length; idx++) {
       let isbn = isbns[idx].toUpperCase();
       if (isbn.length === 10) isbn = '978' + isbn; 
-      const alumnos = idx < numbers.length ? numbers[idx] : (numbers.length === 1 ? numbers[0] : 0);
+      // MEJORA 1: Si no hay número, ponemos 1 en lugar de 0
+      const alumnos = idx < numbers.length ? numbers[idx] : (numbers.length === 1 ? numbers[0] : 1);
       
       let existing = entries.find(e => e.isbn === isbn);
       if (existing) existing.alumnos += alumnos;
@@ -65,7 +66,8 @@ export function generatePIN() {
 export function refreshDtosReal(foundArray, currentDtos) {
   const dtos = {};
   foundArray.forEach(b => {
-    const prov = b.proveedor || 'Sin proveedor';
+    // MEJORA 5: "Otros" en lugar de "Sin proveedor"
+    const prov = b.proveedor || 'Otros';
     if (!dtos[prov]) dtos[prov] = { sum: 0, count: 0 };
     dtos[prov].sum += (parseFloat(b.dto) || 0);
     dtos[prov].count += 1;
