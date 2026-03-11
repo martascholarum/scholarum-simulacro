@@ -14,7 +14,7 @@ export function Header({ nombre, isAuthenticated, step, isC, setViewMode, handle
           <div style={{ borderLeft: `1px solid ${C.muted}`, paddingLeft: 15, marginLeft: 5 }}>
             <div style={{ fontSize: 11, letterSpacing: 1.5, fontWeight: 700, color: C.slate, textTransform: 'uppercase', marginBottom: 2 }}>LA TIENDA DEL COLE</div>
             {/* MEJORA 4: Título cambiado a TEST MEJORAS */}
-            <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.navy, letterSpacing: '-0.3px' }}>{nombre ? `Propuesta: ${nombre}` : "TEST MEJORAS"}</h1>
+            <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.navy, letterSpacing: '-0.3px' }}>{nombre ? `Propuesta: ${nombre}` : "SIMULACROS DE TIENDA"}</h1>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
