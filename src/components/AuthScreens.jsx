@@ -6,7 +6,7 @@ export function AuthScreens({ step, pinInput, setPinInput, handleLogin }) {
       <div style={{ ...sty.card, maxWidth: 450, margin: '60px auto', textAlign: 'center', borderTop: `4px solid ${C.blue}` }}>
         <div style={{ fontSize: 45, marginBottom: 15 }}>🔐</div>
         <h2 style={{ color: C.navy, margin: '0 0 10px 0', fontSize: 26, fontWeight: 800 }}>Acceso Empleado</h2>
-        <p style={{ color: C.slate, fontSize: 15, marginBottom: 25 }}>Introduce el PIN maestro para gestionar propuestas.</p>
+        <p style={{ color: C.slate, fontSize: 15, marginBottom: 25 }}>Introduce el PIN para gestionar propuestas.</p>
         <input type="password" placeholder="••••" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} style={{ ...sty.input, textAlign: 'center', fontSize: 28, letterSpacing: 10, marginBottom: 20, padding: '15px' }} />
         <button onClick={handleLogin} style={{ ...sty.btn, width: '100%', fontSize: 16, padding: '14px' }}>Acceder al Sistema</button>
       </div>

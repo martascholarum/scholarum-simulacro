@@ -206,7 +206,7 @@ export default function App() {
         meta: { logoUrl, responsable, comercialName, comentarios, pin, notFound: notFoundList, invalidCodes: invalidList, pricingModel, editorialMargins } 
       };
       const baseUrl = `${window.location.origin}${window.location.pathname}`;
-      const saveData = { nombre, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: colDtos, datos: datosSeguros };
+      const saveData = { nombre, pin, costeOp: costePapel, costeOpDigital: costeDigital, prob: probabilidad, condiciones: colDtos, datos: datosSeguros };
 
       const r = await apiCall('guardar', { data: saveData, id: currentId, baseUrl });
       if (r.error) throw new Error(r.error);
@@ -556,7 +556,7 @@ export default function App() {
                                 <td style={{ padding: '20px 25px', fontWeight: 700, color: C.navy }}>{sh(prov)}</td>
                                 <td style={{ padding: '20px 25px', textAlign: 'center', color: C.slate }}>{d.scho}%</td>
                                 <td style={{ padding: '20px 25px', textAlign: 'center' }}>
-                                  <input type="number" value={d.col} onChange={e => setColDtos(p => ({ ...p, [prov]: { ...p[prov], col: +e.target.value } }))} disabled={!isC} style={{ width: 55, border: 'none', outline: 'none', textAlign: 'center', fontWeight: '800', fontSize: 18, color: dif ? C.teal : C.navy, background: 'transparent' }} />%
+                                  <input type="number" value={d.col} onChange={e => setColDtos(p => ({ ...p, [prov]: { ...p[prov], col: +e.target.value } }))} style={{ width: 55, border: 'none', outline: 'none', textAlign: 'center', fontWeight: '800', fontSize: 18, color: dif ? C.teal : C.navy, background: 'transparent' }} />%
                                 </td>
                                 <td style={{ padding: '20px 25px', textAlign: 'right', fontWeight: 800, color: (provCalc?.rap || 0) > 0 ? C.coral : C.slate }}>{fmt(provCalc?.rap || 0)}</td>
                               </tr>

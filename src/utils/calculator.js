@@ -9,7 +9,9 @@ export function calculateBusinessModel({ editableData, colDtos, costePapel, cost
     const alumnos = parseFloat(book.alumnos) || 0;
     const dtoScho = parseFloat(book.dto) || 0;
     
-    const d = colDtos[book.proveedor] || { scho: dtoScho, col: dtoScho };
+    // MEJORA 5: "Otros"
+    const provName = book.proveedor || 'Otros';
+    const d = colDtos[provName] || { scho: dtoScho, col: dtoScho };
     const dCol = parseFloat(d.col) || 0;
     const dScho = parseFloat(d.scho) || 0;
     
@@ -25,7 +27,6 @@ export function calculateBusinessModel({ editableData, colDtos, costePapel, cost
     const tcc = alumsEstimados * costeCol; 
     const costOp = tv * opPct; 
     
-    const provName = book.proveedor || 'Sin proveedor';
     const edMarginPct = parseFloat(editorialMargins[provName]) || 0;
     const bookSchoolMargin = tv * (edMarginPct / 100);
 
@@ -48,7 +49,8 @@ export function calculateBusinessModel({ editableData, colDtos, costePapel, cost
 
   const bp = {};
   rows.forEach(r => {
-    const k = r.proveedor || 'Sin proveedor';
+    // MEJORA 5: "Otros"
+    const k = r.proveedor || 'Otros';
     if (!bp[k]) bp[k] = { p: k, n: 0, tv: 0, tcs: 0, tcc: 0, costOp: 0, rap: 0 };
     bp[k].n++; bp[k].tv += r.tv; bp[k].tcs += r.tcs; bp[k].tcc += r.tcc; bp[k].costOp += r.costOp; bp[k].rap += r.rap;
   });
