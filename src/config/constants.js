@@ -18,6 +18,16 @@ export const COMMERCIAL_PIN = "1234";
 export const API = "https://script.google.com/macros/s/AKfycbx6OQ3C3iYw9bGXtx82hZNlevQOZBp4u1aUuoHkQQeiIZKknKtcCJsAa6fI9Xbr1CJT/exec";
 export const N8N_WEBHOOK_URL = "https://scholarumdigital.app.n8n.cloud/webhook/0c901ba1-fd9e-4a10-91f0-c5b612249163"; 
 export const CLARITY_ID = ""; 
+export const AZURE_API_URL = "https://shub-admin.azurewebsites.net/simulador/ObtenerInfoCatalogo";
+export const AZURE_API_KEY = "1234567890";
+
+export const CURSOS_DISPONIBLES = [
+  '1º de Educación Infantil', '2º de Educación Infantil', '3º de Educación Infantil',
+  '4º de Educación Infantil', '5º de Educación Infantil', '6º de Educación Infantil',
+  '1º de Educación Primaria', '2º de Educación Primaria', '3º de Educación Primaria',
+  '4º de Educación Primaria', '5º de Educación Primaria', '6º de Educación Primaria',
+  '1º de ESO', '2º de ESO', '3º de ESO', '4º de ESO',
+];
 
 export const C = {
   ink: '#0f172a', navy: '#1e293b', blue: BRAND.primary, teal: BRAND.secondary, 

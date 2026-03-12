@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
 // IMPORTACIONES ARQUITECTURA SDD
-import { BRAND, COMMERCIAL_PIN, N8N_WEBHOOK_URL, CLARITY_ID, C, sty } from "./config/constants";
+import { BRAND, COMMERCIAL_PIN, N8N_WEBHOOK_URL, CLARITY_ID, C, sty, CURSOS_DISPONIBLES } from "./config/constants";
 import { fmt, sh, setFavicon, injectClarity, parseInput, generatePIN, refreshDtosReal } from "./utils/helpers";
 import { apiCall } from "./services/api";
 import { calculateBusinessModel } from "./utils/calculator";
@@ -13,13 +13,6 @@ import { Header, Footer } from "./components/Layout";
 import { AuthScreens } from "./components/AuthScreens";
 import { CreationForm } from "./components/CreationForm";
 
-const CURSOS_DISPONIBLES = [
-  '1º de Educación Infantil', '2º de Educación Infantil', '3º de Educación Infantil',
-  '4º de Educación Infantil', '5º de Educación Infantil', '6º de Educación Infantil',
-  '1º de Educación Primaria', '2º de Educación Primaria', '3º de Educación Primaria',
-  '4º de Educación Primaria', '5º de Educación Primaria', '6º de Educación Primaria',
-  '1º de ESO', '2º de ESO', '3º de ESO', '4º de ESO',
-];
 
 export default function App() {
   const [step, setStep] = useState(() => (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('id')) ? 1 : 98); 
@@ -66,7 +59,6 @@ export default function App() {
   // NUEVOS ESTADOS PARA LOS CURSOS
   const [cursos, setCursos] = useState([]); 
   const [asignarPorCurso, setAsignarPorCurso] = useState(false);
-  const [showCursosPopup, setShowCursosPopup] = useState(false);
   const [tempCursoNombre, setTempCursoNombre] = useState('');
   const [tempCursoAlumnos, setTempCursoAlumnos] = useState('');
   
@@ -84,7 +76,7 @@ export default function App() {
     injectClarity(CLARITY_ID); 
   }, []);
   
-  useEffect(() => { if (isC && tab === 'propuesta') setTab('resumen'); }, [isC, tab]);
+  useEffect(() => { if (tab === 'propuesta') setTab('resumen'); }, [tab]);
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
@@ -119,7 +111,7 @@ export default function App() {
           
           const isClient = ref !== 'admin';
           setViewMode(isClient ? 'colegio' : 'comercial');
-          setTab(isClient ? 'propuesta' : 'resumen'); 
+          setTab('resumen');
           
           if (isClient) {
             if (meta.pin) setStep(99); 
@@ -160,44 +152,71 @@ export default function App() {
   };
 
   const handleCruzar = useCallback(async () => {
-    const parsed = parseInput(inputText, asignarPorCurso);
+    const parsed = parseInput(inputText, asignarPorCurso, CURSOS_DISPONIBLES);
     if (!parsed.entries.length) { setError('No se detectaron ISBNs válidos (13 dígitos).'); return; }
-    
-    setInvalidCodes(parsed.invalid); 
+
+    setInvalidCodes(parsed.invalid);
     const newPin = pin || generatePIN();
-    if(!pin) setPin(newPin);
+    if (!pin) setPin(newPin);
+
+    // Detectar cursos que venían en el texto pegado
+    const cursosEnTexto = [...new Set(parsed.entries.map(e => e.cursoDetectado).filter(Boolean))];
+    const usaModosCursos = asignarPorCurso || cursosEnTexto.length > 0;
+
+    // Auto-crear cursos detectados en el texto que no estén ya configurados
+    let cursosActualizados = [...cursos];
+    cursosEnTexto.forEach(nombre => {
+      if (!cursosActualizados.find(c => c.nombre === nombre)) {
+        cursosActualizados.push({ id: `auto_${Date.now()}_${Math.random().toString(36).slice(2)}`, nombre, alumnos: 1 });
+      }
+    });
+    if (cursosActualizados.length !== cursos.length) {
+      setCursos(cursosActualizados);
+      if (!asignarPorCurso) setAsignarPorCurso(true); // activar modo cursos automáticamente
+    }
 
     setLoadingMsg('Marta Caballero está haciendo su magia... ✨');
-    setLoadingSubMsg(asignarPorCurso ? 'Cruzando libros y auto-asignando cursos...' : 'Cruzando libros con el catálogo maestro');
+    setLoadingSubMsg(usaModosCursos ? 'Cruzando libros y auto-asignando cursos...' : 'Cruzando libros con el catálogo maestro');
     setLoading(true); setError(''); setStep(1);
     try {
       const isbnStr = parsed.entries.map(e => `${e.isbn}:${e.alumnos}`).join(',');
       const r = await apiCall('cruzar', { isbns: isbnStr });
       if (r.error) throw new Error(r.error);
-      
+
       const enhancedNotFound = (r.notFound || []).map(isbn => {
         const entry = parsed.entries.find(e => e.isbn === isbn);
         return entry && entry.context ? `${isbn} - ${entry.context}` : isbn;
       });
 
-      // MAGIA DE AUTO-ASIGNACIÓN
+      // AUTO-ASIGNACIÓN: usa cursoDetectado del texto como prioridad, luego título del libro
       let librosFinales = r.found;
-      if (asignarPorCurso && cursos.length > 0) {
+      if (usaModosCursos && cursosActualizados.length > 0) {
         librosFinales = r.found.map(book => {
           const entry = parsed.entries.find(e => e.isbn === book.isbn);
-          const searchTxt = (book.titulo || '').replace(/[ºª]/g, '').toLowerCase();
-          
-          const matched = cursos.find(c => searchTxt.includes(c.nombre.replace(/[ºª]/g, '').toLowerCase()));
-          return matched 
-            ? { ...book, cursoId: matched.id, alumnos: matched.alumnos, context: entry?.context } 
-            : { ...book, cursoId: null, alumnos: 1, context: entry?.context };
+
+          // Prioridad 1: curso detectado explícitamente en el texto pegado
+          let matched = entry?.cursoDetectado
+            ? cursosActualizados.find(c => c.nombre === entry.cursoDetectado)
+            : null;
+
+          // Prioridad 2: match por título del libro (solo si asignarPorCurso estaba activo)
+          if (!matched && asignarPorCurso) {
+            const searchTxt = (book.titulo || '').replace(/[ºª]/g, '').toLowerCase();
+            matched = cursosActualizados.find(c =>
+              searchTxt.includes(c.nombre.replace(/[ºª]/g, '').toLowerCase())
+            );
+          }
+
+          return matched
+            ? { ...book, cursoId: matched.id, alumnos: matched.alumnos, context: entry?.context }
+            : { ...book, cursoId: null, alumnos: book.alumnos, context: entry?.context };
         });
       }
-      
-      const datosCompletos = { ...r, found: librosFinales, meta: { notFound: enhancedNotFound, invalidCodes: parsed.invalid, cursos } };
+
+      const datosCompletos = { ...r, found: librosFinales, meta: { notFound: enhancedNotFound, invalidCodes: parsed.invalid, cursos: cursosActualizados } };
       setData(datosCompletos); setEditableData(datosCompletos);
-      setColDtos(refreshDtosReal(librosFinales, {})); 
-      setStep(2); setTab(asignarPorCurso ? 'cursos' : 'resumen'); // Si usa cursos, le llevamos a esa pestaña
+      setColDtos(refreshDtosReal(librosFinales, {}));
+      setStep(2); setTab(usaModosCursos ? 'cursos' : 'resumen');
     } catch (e) { setError(e.message); setStep(0); }
     finally { setLoading(false); }
   }, [inputText, pin, asignarPorCurso, cursos]);
@@ -335,8 +354,6 @@ const handleAddCurso = () => {
             inputText={inputText} setInputText={setInputText}
             fileRef={fileRef} handleFile={handleFile}
             error={error} handleCruzar={handleCruzar}
-            asignarPorCurso={asignarPorCurso} setAsignarPorCurso={setAsignarPorCurso}
-            cursos={cursos} setShowCursosPopup={setShowCursosPopup}
           />
         )}
 
@@ -467,71 +484,129 @@ const handleAddCurso = () => {
             )}
 
             <div style={{ display: 'flex', gap: 10, marginBottom: 25, flexWrap: 'wrap', borderBottom: `1px solid ${C.muted}`, paddingBottom: 20 }}>
-              {!isC && <button onClick={() => setTab('propuesta')} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === 'propuesta' ? C.blue : '#fff', color: tab === 'propuesta' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: tab === 'propuesta' ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>Propuesta Integral</button>}
-              {['resumen', 'detalle'].map(t => (
-                <button key={t} onClick={() => setTab(t)} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === t ? C.blue : '#fff', color: tab === t ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize', transition: 'all 0.2s', boxShadow: tab === t ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>{t}</button>
+              {[['resumen', isC ? 'Resumen' : 'Propuesta Integral'], ['detalle', 'Detalle']].map(([t, label]) => (
+                <button key={t} onClick={() => setTab(t)} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === t ? C.blue : '#fff', color: tab === t ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: tab === t ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>{label}</button>
               ))}
-              {(isC || pricingModel === 'global') && (
-                <button onClick={() => setTab('editoriales')} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === 'editoriales' ? C.blue : '#fff', color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: tab === 'editoriales' ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>
-                  {pricingModel === 'global' ? 'Editoriales y Rappel' : 'Márgenes por Editorial'}
-                </button>
-              )}
-              {isC && (
+              <button onClick={() => setTab('editoriales')} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === 'editoriales' ? C.blue : '#fff', color: tab === 'editoriales' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: tab === 'editoriales' ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>
+                {pricingModel === 'global' ? 'Editoriales y Rappel' : (isC ? 'Márgenes por Editorial' : 'Tus Descuentos')}
+              </button>
+              {(isC || cursos.length > 0) && (
                 <button onClick={() => setTab('cursos')} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: tab === 'cursos' ? C.blue : '#fff', color: tab === 'cursos' ? '#fff' : C.slate, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: tab === 'cursos' ? '0 4px 6px -1px rgba(37,99,235,0.2)' : '0 1px 2px rgba(0,0,0,0.05)' }}>
                   Cursos {cursos.length > 0 ? `(${cursos.length})` : ''}
                 </button>
               )}
             </div>
 
-            {!isC && tab === 'propuesta' && (
-              <div style={{ animation: 'fadeIn 0.6s ease-out' }}>
-                <div style={{ background: `linear-gradient(135deg, ${C.navy} 0%, ${C.blue} 100%)`, position: 'relative', overflow: 'hidden', borderRadius: 24, padding: '60px 50px', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 40, marginBottom: 30, boxShadow: '0 20px 25px -5px rgba(37,99,235,0.3)' }}>
-                  <div style={{ flex: 1, minWidth: 320, position: 'relative', zIndex: 1 }}>
-                    <div style={{ display: 'inline-block', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', padding: '6px 14px', borderRadius: 30, fontSize: 12, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 20 }}>✨ Propuesta Exclusiva</div>
-                    <h2 style={{ margin: '0 0 20px 0', fontSize: 46, lineHeight: 1.1, fontWeight: 800 }}>Hazlo fácil con {BRAND.name}</h2>
-                    {responsable && <div style={{ display: 'inline-flex', alignItems: 'center', background: 'rgba(0,0,0,0.25)', padding: '10px 18px', borderRadius: 10, marginBottom: 25, borderLeft: `4px solid ${C.gold}` }}><span style={{ fontSize: 16 }}>Para: <strong style={{fontWeight: 800}}>{responsable} ({nombre})</strong></span></div>}
-                    <p style={{ fontSize: 18, opacity: 0.9, maxWidth: 650, margin: 0, lineHeight: 1.6 }}>Imagina tener una tienda online propia del colegio, simplificando los procesos para las familias y aumentando la rentabilidad.</p>
-                  </div>
-                  {logoUrl && <div style={{ position: 'relative', zIndex: 1 }}><div style={{ background: '#fff', padding: 25, borderRadius: '50%', width: 170, height: 170, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><img src={logoUrl} alt="Logo" style={{ maxWidth: '85%', maxHeight: '85%', objectFit: 'contain' }} /></div></div>}
-                </div>
-
-                {comentarios && (
-                  <div style={{ background: '#fff', borderLeft: `6px solid ${C.accent}`, padding: '25px 30px', borderRadius: 16, marginBottom: 40, boxShadow: '0 10px 25px rgba(0,0,0,0.03)' }}>
-                    <h4 style={{ margin: '0 0 10px 0', color: C.navy, display: 'flex', alignItems: 'center', gap: 12, fontSize: 18 }}><span>💡</span> Observaciones sobre la propuesta</h4>
-                    <p style={{ margin: 0, color: C.slate, lineHeight: 1.7, fontSize: 16, whiteSpace: 'pre-wrap' }}>{comentarios}</p>
-                  </div>
-                )}
-
-                <div style={{ ...sty.card, border: `2px solid ${C.teal}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 30 }}>
-                    <div style={{ flex: 1, minWidth: 300 }}>
-                      <h3 style={{ marginTop: 0, color: C.teal, display: 'flex', alignItems: 'center', gap: 10, fontSize: 24, fontWeight: 800 }}>🧮 Simulador de Retorno</h3>
-                      <p style={{ color: C.slate, fontSize: 16, margin: '15px 0 30px 0' }}>Descubre tu beneficio ajustando la estimación de familias.</p>
-                      <div style={{ background: '#f8fafc', padding: '20px 25px', borderRadius: 12, border: `1px solid ${C.muted}` }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}><span style={{ fontWeight: 700, color: C.navy }}>Familias estimadas</span><span style={{ fontWeight: 800, color: C.teal }}>{probabilidad}%</span></div>
-                        <input type="range" min="10" max="100" step="5" value={probabilidad} onChange={e => setProbabilidad(+e.target.value)} style={{ width: '100%', cursor: 'pointer', accentColor: C.teal }} />
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 15, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <KPI label="Beneficio Estimado" value={fmt(calc.activeSchoolBenefit)} accent />
-                      {pricingModel === 'global' && calc.rap > 0 && <KPI label="Rappel Garantizado" value={fmt(calc.rap)} sub="Por mejora de condiciones" color={C.coral} />}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {tab === 'resumen' && (
               <div style={{ animation: 'fadeIn 0.3s' }}>
+
+                {/* HERO BANNER — visible únicamente en vista colegio */}
                 {!isC && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15, marginBottom: 25 }}>
-                    <KPI label="Facturación Estimada" value={fmt(calc.tv)} sub={`De ${Math.round(calc.totalAlumnos * (probabilidad/100))} compras`} icon="💰" />
-                    <KPI label="Total Costes Centro" value={fmt(calc.tcc + calc.totalCostOp)} sub={`Material: ${fmt(calc.tcc)}`} icon="📉" color={C.slate} />
-                    <KPI label="Beneficio Colegio" value={fmt(calc.activeSchoolBenefit)} sub={pricingModel === 'global' ? "Comisión + Rappel" : "Margen directo"} icon="🏫" accent />
-                  </div>
+                  <>
+                    <div style={{ background: `linear-gradient(135deg, ${C.navy} 0%, ${C.blue} 100%)`, position: 'relative', overflow: 'hidden', borderRadius: 24, padding: '60px 50px', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 40, marginBottom: 30, boxShadow: '0 20px 25px -5px rgba(37,99,235,0.3)' }}>
+                      <div style={{ flex: 1, minWidth: 320, position: 'relative', zIndex: 1 }}>
+                        <div style={{ display: 'inline-block', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', padding: '6px 14px', borderRadius: 30, fontSize: 12, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 20 }}>✨ Propuesta Exclusiva</div>
+                        <h2 style={{ margin: '0 0 20px 0', fontSize: 46, lineHeight: 1.1, fontWeight: 800 }}>Hazlo fácil con {BRAND.name}</h2>
+                        {responsable && <div style={{ display: 'inline-flex', alignItems: 'center', background: 'rgba(0,0,0,0.25)', padding: '10px 18px', borderRadius: 10, marginBottom: 25, borderLeft: `4px solid ${C.gold}` }}><span style={{ fontSize: 16 }}>Para: <strong style={{fontWeight: 800}}>{responsable} ({nombre})</strong></span></div>}
+                        <p style={{ fontSize: 18, opacity: 0.9, maxWidth: 650, margin: 0, lineHeight: 1.6 }}>Imagina tener una tienda online propia del colegio, simplificando los procesos para las familias y aumentando la rentabilidad.</p>
+                      </div>
+                      {logoUrl && <div style={{ position: 'relative', zIndex: 1 }}><div style={{ background: '#fff', padding: 25, borderRadius: '50%', width: 170, height: 170, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><img src={logoUrl} alt="Logo" style={{ maxWidth: '85%', maxHeight: '85%', objectFit: 'contain' }} /></div></div>}
+                    </div>
+
+                    {comentarios && (
+                      <div style={{ background: '#fff', borderLeft: `6px solid ${C.accent}`, padding: '25px 30px', borderRadius: 16, marginBottom: 30, boxShadow: '0 10px 25px rgba(0,0,0,0.03)' }}>
+                        <h4 style={{ margin: '0 0 10px 0', color: C.navy, display: 'flex', alignItems: 'center', gap: 12, fontSize: 18 }}><span>💡</span> Observaciones sobre la propuesta</h4>
+                        <p style={{ margin: 0, color: C.slate, lineHeight: 1.7, fontSize: 16, whiteSpace: 'pre-wrap' }}>{comentarios}</p>
+                      </div>
+                    )}
+
+                    {/* BENEFICIOS CLAVE */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20, marginBottom: 30 }}>
+                      {[
+                        { icon: '🧑‍💼', title: 'Especialista dedicado a tu colegio', desc: 'Tendrás un asesor que os guía en todo el proceso y un equipo de atención al cliente para las familias. Vosotros no tenéis que preocuparos de nada.' },
+                        { icon: '🛍️', title: 'Vende todo lo que necesitas', desc: 'Libros de texto, licencias digitales, material escolar, uniformes, agendas, papeletas de sorteo… Cualquier producto que tu colegio quiera ofrecer.' },
+                        { icon: '📦', title: 'Logística completamente cubierta', desc: 'Pedidos, almacenamiento, envío a domicilio y devoluciones. Nos encargamos de toda la cadena con las editoriales sin que el colegio intervenga.' },
+                        { icon: '💰', title: 'Rentabilidad real para el centro', desc: 'Cada venta genera ingresos para tu colegio. Puedes destinarlo a modernizar aulas, mejorar instalaciones deportivas o cualquier otra necesidad.' },
+                      ].map(b => (
+                        <div key={b.title} style={{ background: '#fff', borderRadius: 16, padding: '25px 28px', border: `1px solid ${C.muted}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          <div style={{ fontSize: 32 }}>{b.icon}</div>
+                          <div style={{ fontWeight: 800, fontSize: 15, color: C.navy, lineHeight: 1.3 }}>{b.title}</div>
+                          <div style={{ fontSize: 14, color: C.slate, lineHeight: 1.6 }}>{b.desc}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* CÓMO FUNCIONA */}
+                    <div style={{ background: '#fff', borderRadius: 20, padding: '35px 40px', border: `1px solid ${C.muted}`, marginBottom: 30, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                      <h3 style={{ margin: '0 0 30px 0', fontSize: 22, fontWeight: 800, color: C.navy }}>¿Cómo funciona?</h3>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                        {[
+                          { n: 1, text: 'Tras contactar con nosotros, os pediremos el listado de ISBN y resto de productos a incluir en la tienda.' },
+                          { n: 2, text: 'Elegís un dominio acorde al centro y nosotros lo ponemos todo en marcha: diseño, contenidos y configuración. Listo para vender.' },
+                          { n: 3, text: 'Comunicáis a las familias que pueden comprar desde la nueva web. ¡No tenéis que hacer más!' },
+                          { n: 4, text: 'Asumimos toda la logística con las editoriales: pedidos, almacenamiento, entrega a domicilio y devolución final de campaña.' },
+                          { n: 5, text: 'Gestionamos toda la atención al cliente para familias: seguimientos, envíos e incidencias, sin que el colegio intervenga.' },
+                        ].map((s, idx, arr) => (
+                          <div key={s.n} style={{ display: 'flex', gap: 20, alignItems: 'flex-start', paddingBottom: idx < arr.length - 1 ? 20 : 0, position: 'relative' }}>
+                            {idx < arr.length - 1 && <div style={{ position: 'absolute', left: 19, top: 42, bottom: 0, width: 2, background: `${C.blue}22` }} />}
+                            <div style={{ width: 40, height: 40, borderRadius: '50%', background: `linear-gradient(135deg, ${C.blue}, #1d4ed8)`, color: '#fff', fontWeight: 800, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 8px rgba(37,99,235,0.25)' }}>{s.n}</div>
+                            <div style={{ paddingTop: 8, fontSize: 15, color: C.slate, lineHeight: 1.6 }}>{s.text}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* CADENA LOGÍSTICA */}
+                    <div style={{ background: `linear-gradient(135deg, ${C.teal}15 0%, ${C.blue}10 100%)`, borderRadius: 20, padding: '30px 35px', border: `1px solid ${C.teal}33`, marginBottom: 30 }}>
+                      <h3 style={{ margin: '0 0 25px 0', fontSize: 20, fontWeight: 800, color: C.navy }}>Nos encargamos de todo</h3>
+                      <div style={{ display: 'flex', gap: 0, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+                        {[
+                          { icon: '🛒', label: 'La familia compra' },
+                          { icon: '📚', label: 'Pedido automático en editorial' },
+                          { icon: '🏭', label: 'Recepción en almacenes Deliber' },
+                          { icon: '📦', label: 'Pack personalizado por cliente' },
+                          { icon: '🚚', label: 'Envío y seguimiento' },
+                        ].map((item, idx, arr) => (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '0 12px' }}>
+                              <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', border: `2px solid ${C.teal}33` }}>{item.icon}</div>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: C.navy, textAlign: 'center', maxWidth: 80, lineHeight: 1.3 }}>{item.label}</span>
+                            </div>
+                            {idx < arr.length - 1 && <div style={{ color: C.teal, fontSize: 20, fontWeight: 800, marginBottom: 20 }}>→</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* KPIs colegio */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15, marginBottom: 30 }}>
+                      <KPI label="Facturación Estimada" value={fmt(calc.tv)} sub={`De ${Math.round(calc.totalAlumnos * (probabilidad/100))} compras`} icon="💰" />
+                      <KPI label="Total Costes Centro" value={fmt(calc.tcc + calc.totalCostOp)} sub={`Material: ${fmt(calc.tcc)}`} icon="📉" color={C.slate} />
+                      <KPI label="Beneficio Colegio" value={fmt(calc.activeSchoolBenefit)} sub={pricingModel === 'global' ? "Comisión + Rappel" : "Margen directo"} icon="🏫" accent />
+                    </div>
+
+                    {/* Simulador de Retorno */}
+                    <div style={{ ...sty.card, border: `2px solid ${C.teal}`, marginBottom: 25 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 30 }}>
+                        <div style={{ flex: 1, minWidth: 300 }}>
+                          <h3 style={{ marginTop: 0, color: C.teal, display: 'flex', alignItems: 'center', gap: 10, fontSize: 24, fontWeight: 800 }}>🧮 Simulador de Retorno</h3>
+                          <p style={{ color: C.slate, fontSize: 16, margin: '15px 0 30px 0' }}>Descubre tu beneficio ajustando la estimación de familias.</p>
+                          <div style={{ background: '#f8fafc', padding: '20px 25px', borderRadius: 12, border: `1px solid ${C.muted}` }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}><span style={{ fontWeight: 700, color: C.navy }}>Familias estimadas</span><span style={{ fontWeight: 800, color: C.teal }}>{probabilidad}%</span></div>
+                            <input type="range" min="10" max="100" step="5" value={probabilidad} onChange={e => setProbabilidad(+e.target.value)} style={{ width: '100%', cursor: 'pointer', accentColor: C.teal }} />
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 15, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <KPI label="Beneficio Estimado" value={fmt(calc.activeSchoolBenefit)} accent />
+                          {pricingModel === 'global' && calc.rap > 0 && <KPI label="Rappel Garantizado" value={fmt(calc.rap)} sub="Por mejora de condiciones" color={C.coral} />}
+                        </div>
+                      </div>
+                    </div>
+                  </>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 25 }}>
+                {/* GRÁFICOS: Ventas por editorial + distribución */}
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 25, marginBottom: cursos.length > 0 ? 25 : 0 }}>
                   <div style={sty.card}>
                     <h3 style={{ marginTop: 0, fontSize: 20, color: C.navy, fontWeight: 800, letterSpacing: '-0.5px', marginBottom: 25 }}>Ventas por Editorial</h3>
                     <ResponsiveContainer width="100%" height={350}>
@@ -553,6 +628,29 @@ const handleAddCurso = () => {
                     </ResponsiveContainer>
                   </div>
                 </div>
+
+                {/* GRÁFICO POR CURSOS — solo cuando hay cursos configurados */}
+                {cursos.length > 0 && (() => {
+                  const cursosData = cursos.map(c => {
+                    const libros = (editableData?.found || []).filter(b => b.cursoId === c.id);
+                    const venta = Math.round(libros.reduce((s, b) => s + (parseFloat(b.pvp) || 0) * (b.alumnos || 0), 0) * (probabilidad / 100));
+                    return { name: c.nombre.replace(/º de Educaci[oó]n /gi, 'º '), Venta: venta, libros: libros.length };
+                  }).filter(d => d.libros > 0);
+                  if (!cursosData.length) return null;
+                  return (
+                    <div style={sty.card}>
+                      <h3 style={{ marginTop: 0, fontSize: 20, color: C.navy, fontWeight: 800, letterSpacing: '-0.5px', marginBottom: 25 }}>Ventas Estimadas por Curso</h3>
+                      <ResponsiveContainer width="100%" height={Math.max(250, cursosData.length * 45)}>
+                        <BarChart data={cursosData} layout="vertical" margin={{ left: 10 }}>
+                          <XAxis type="number" hide />
+                          <YAxis type="category" dataKey="name" width={150} tick={{ fontSize: 13, fill: C.slate, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                          <Tooltip formatter={(v, n, p) => [fmt(v), `${p.payload.libros} libros`]} />
+                          <Bar dataKey="Venta" fill={C.teal} radius={[0, 8, 8, 0]} barSize={20} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -597,8 +695,9 @@ const handleAddCurso = () => {
               </div>
             )}
 
-            {tab === 'cursos' && isC && (
-              <div style={{ animation: 'fadeIn 0.3s', display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 25, alignItems: 'start' }}>
+            {tab === 'cursos' && (
+              <div style={{ animation: 'fadeIn 0.3s', display: 'grid', gridTemplateColumns: isC ? '1fr 1.5fr' : '1fr', gap: 25, alignItems: 'start' }}>
+                {isC && (
                 <div style={sty.card}>
                   <h3 style={{ marginTop: 0, color: C.navy, fontWeight: 800, fontSize: 18, marginBottom: 20 }}>Gestor de Cursos</h3>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 15 }}>
@@ -630,6 +729,7 @@ const handleAddCurso = () => {
                     </div>
                   )}
                 </div>
+                )}
                 <div style={sty.card}>
                   <h3 style={{ marginTop: 0, color: C.navy, fontWeight: 800, fontSize: 18, marginBottom: 20 }}>Asignador de Libros</h3>
                   <div style={{ overflowX: 'auto', borderRadius: 12, border: `1px solid ${C.muted}` }}>
@@ -747,38 +847,6 @@ const handleAddCurso = () => {
       </div>
 
       <Footer />
-      {showCursosPopup && (
-    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: 'white', padding: 30, borderRadius: 16, width: 400, maxWidth: '90%' }}>
-        <h3 style={{ marginTop: 0, color: C.navy }}>Configurar Cursos</h3>
-        <p style={{ fontSize: 13, color: C.slate }}>Añade los cursos antes de cruzar para que la IA los asigne automáticamente.</p>
-        
-        <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-          <select value={tempCursoNombre} onChange={e => setTempCursoNombre(e.target.value)} style={{ flex: 2, padding: 8, borderRadius: 6, border: '1px solid #ccc' }}>
-            <option value="">Selecciona curso...</option>
-            {CURSOS_DISPONIBLES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <input type="number" placeholder="Alumnos" value={tempCursoAlumnos} onChange={e => setTempCursoAlumnos(e.target.value)} style={{ flex: 1, padding: 8, borderRadius: 6, border: '1px solid #ccc' }} />
-          <button onClick={handleAddCurso} style={{ background: C.teal, color: 'white', border: 'none', borderRadius: 6, padding: '0 15px', cursor: 'pointer', fontWeight: 'bold' }}>+</button>
-        </div>
-
-        {cursos.length > 0 && (
-          <div style={{ background: '#f8fafc', borderRadius: 8, padding: 10, maxHeight: 200, overflowY: 'auto', marginBottom: 20 }}>
-            {cursos.map(c => (
-              <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #eee' }}>
-                <strong>{c.nombre}</strong>
-                <span>{c.alumnos} alumnos</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <button onClick={() => setShowCursosPopup(false)} style={{ width: '100%', padding: 12, background: C.blue, color: 'white', border: 'none', borderRadius: 8, fontWeight: 'bold', cursor: 'pointer' }}>
-          Listo, cerrar
-        </button>
-      </div>
-    </div>
-  )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { C, COMERCIALES, sty } from "../config/constants";
 
-export function CreationForm({ comercialName, setComercialName, nombre, setNombre, responsable, setResponsable, logoUrl, setLogoUrl, inputText, setInputText, fileRef, handleFile, error, handleCruzar, asignarPorCurso, setAsignarPorCurso, cursos, setShowCursosPopup }) {
+export function CreationForm({ comercialName, setComercialName, nombre, setNombre, responsable, setResponsable, logoUrl, setLogoUrl, inputText, setInputText, fileRef, handleFile, error, handleCruzar }) {
   return (
     <div style={{...sty.card, animation: 'fadeIn 0.4s ease-out'}}>
       <h2 style={{ marginTop: 0, fontSize: 24, color: C.navy, borderBottom: `1px solid ${C.muted}`, paddingBottom: 20, fontWeight: 800 }}>Crear Nueva Propuesta</h2>
@@ -39,26 +39,6 @@ export function CreationForm({ comercialName, setComercialName, nombre, setNombr
             <p style={{fontSize: 13, color: C.slate, marginTop: 15}}>Detecta columnas de ISBNs automáticamente</p>
           </div>
         </div>
-      </div>
-      <div style={{ marginTop: 20, padding: '12px 15px', background: '#f8fafc', borderRadius: 8, border: `1px solid ${C.blue}44`, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <input
-          type="checkbox"
-          id="checkCursos"
-          checked={asignarPorCurso}
-          onChange={(e) => {
-            setAsignarPorCurso(e.target.checked);
-            if (e.target.checked && cursos.length === 0) setShowCursosPopup(true);
-          }}
-          style={{ width: 18, height: 18, cursor: 'pointer', flexShrink: 0 }}
-        />
-        <label htmlFor="checkCursos" style={{ fontWeight: 600, color: C.navy, cursor: 'pointer' }}>
-          Asignar alumnos por curso
-        </label>
-        {asignarPorCurso && (
-          <button onClick={() => setShowCursosPopup(true)} style={{ marginLeft: 'auto', padding: '4px 12px', fontSize: 12, background: C.blue, color: 'white', borderRadius: 6, border: 'none', cursor: 'pointer', fontWeight: 600 }}>
-            Configurar Cursos ({cursos.length})
-          </button>
-        )}
       </div>
       {error && <div style={{ marginTop: 25, padding: '15px', background: '#fef2f0', color: C.coral, borderRadius: 10, fontWeight: 600, borderLeft: `4px solid ${C.coral}` }}>⚠️ {error}</div>}
       <div style={{ marginTop: 35, textAlign: 'right', borderTop: `1px solid ${C.muted}`, paddingTop: 25 }}>
