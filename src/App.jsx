@@ -85,7 +85,7 @@ export default function App() {
     if (id) {
       setCurrentId(id);
       setLoadingMsg('Desempaquetando propuesta...');
-      setLoadingSubMsg('No me he quedado tostao, estoy pensando 🧠');
+      setLoadingSubMsg('Danos un segundos, estamos calculando 🧠');
       
       apiCall('cargar', { id })
         .then(res => {
@@ -175,7 +175,7 @@ export default function App() {
       if (!asignarPorCurso) setAsignarPorCurso(true); // activar modo cursos automáticamente
     }
 
-    setLoadingMsg('Marta Caballero está haciendo su magia... ✨');
+    setLoadingMsg('Está sucediendo la magia... ✨');
     setLoadingSubMsg(usaModosCursos ? 'Cruzando libros y auto-asignando cursos...' : 'Cruzando libros con el catálogo maestro');
     setLoading(true); setError(''); setStep(1);
     try {
