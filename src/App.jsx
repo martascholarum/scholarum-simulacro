@@ -776,40 +776,39 @@ const handleAddCurso = () => {
 
             {tab === 'editoriales' && (
               <div style={{...sty.card, animation: 'fadeIn 0.3s'}}>
-                {pricingModel === 'global' ? (
-                  <>
-                    <h3 style={{ marginTop: 0, fontSize: 24, color: C.navy, fontWeight: 800 }}>Descuentos y Rappel</h3>
-                    <div style={{ overflowX: 'auto', borderRadius: 12, border: `1px solid ${C.muted}` }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15 }}>
-                        <thead style={{ position: 'sticky', top: 0, background: '#f8fafc' }}>
-                          <tr style={{ textAlign: 'left' }}>
-                            <th style={{ padding: '20px 25px', color: C.slate }}>Proveedor Principal</th>
-                            <th style={{ padding: '20px 25px', textAlign: 'center', color: C.slate }}>DTO {BRAND.name}</th>
-                            <th style={{ padding: '20px 25px', textAlign: 'center', color: C.teal }}>Tu Descuento Actual</th>
-                            <th style={{ padding: '20px 25px', textAlign: 'right', color: C.coral }}>Rappel a tu favor</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {Object.keys(colDtos).sort().map((prov, i) => {
-                            const d = colDtos[prov];
-                            const dif = d.col > d.scho;
-                            const provCalc = calc.prov.find(p => p.p === prov);
-                            return (
-                              <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fcfcfc' }}>
-                                <td style={{ padding: '20px 25px', fontWeight: 700, color: C.navy }}>{sh(prov)}</td>
-                                <td style={{ padding: '20px 25px', textAlign: 'center', color: C.slate }}>{d.scho}%</td>
-                                <td style={{ padding: '20px 25px', textAlign: 'center' }}>
-                                  <input type="number" value={d.col} onChange={e => setColDtos(p => ({ ...p, [prov]: { ...p[prov], col: +e.target.value } }))} style={{ width: 55, border: 'none', outline: 'none', textAlign: 'center', fontWeight: '800', fontSize: 18, color: dif ? C.teal : C.navy, background: 'transparent' }} />%
-                                </td>
-                                <td style={{ padding: '20px 25px', textAlign: 'right', fontWeight: 800, color: (provCalc?.rap || 0) > 0 ? C.coral : C.slate }}>{fmt(provCalc?.rap || 0)}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                ) : (
+                <>
+                  <h3 style={{ marginTop: 0, fontSize: 24, color: C.navy, fontWeight: 800 }}>Descuentos y Rappel</h3>
+                  <div style={{ overflowX: 'auto', borderRadius: 12, border: `1px solid ${C.muted}`, marginBottom: 30 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15 }}>
+                      <thead style={{ position: 'sticky', top: 0, background: '#f8fafc' }}>
+                        <tr style={{ textAlign: 'left' }}>
+                          <th style={{ padding: '20px 25px', color: C.slate }}>Proveedor Principal</th>
+                          <th style={{ padding: '20px 25px', textAlign: 'center', color: C.slate }}>DTO {BRAND.name}</th>
+                          <th style={{ padding: '20px 25px', textAlign: 'center', color: C.teal }}>Tu Descuento Actual</th>
+                          <th style={{ padding: '20px 25px', textAlign: 'right', color: C.coral }}>Rappel a tu favor</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.keys(colDtos).sort().map((prov, i) => {
+                          const d = colDtos[prov];
+                          const dif = d.col > d.scho;
+                          const provCalc = calc.prov.find(p => p.p === prov);
+                          return (
+                            <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fcfcfc' }}>
+                              <td style={{ padding: '20px 25px', fontWeight: 700, color: C.navy }}>{sh(prov)}</td>
+                              <td style={{ padding: '20px 25px', textAlign: 'center', color: C.slate }}>{d.scho}%</td>
+                              <td style={{ padding: '20px 25px', textAlign: 'center' }}>
+                                <input type="number" value={d.col} onChange={e => setColDtos(p => ({ ...p, [prov]: { ...p[prov], col: +e.target.value } }))} style={{ width: 55, border: 'none', outline: 'none', textAlign: 'center', fontWeight: '800', fontSize: 18, color: dif ? C.teal : C.navy, background: 'transparent' }} />%
+                              </td>
+                              <td style={{ padding: '20px 25px', textAlign: 'right', fontWeight: 800, color: (provCalc?.rap || 0) > 0 ? C.coral : C.slate }}>{fmt(provCalc?.rap || 0)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+                {pricingModel !== 'global' && (
                   <>
                     <h3 style={{ marginTop: 0, fontSize: 24, color: C.navy, fontWeight: 800 }}>Beneficio Directo por Editorial</h3>
                     <div style={{ overflowX: 'auto', borderRadius: 12, border: `1px solid ${C.muted}` }}>

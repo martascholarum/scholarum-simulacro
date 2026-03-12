@@ -53,7 +53,18 @@ export async function apiCall(action, data = {}) {
   }
 
   // --- RUTA CLÁSICA (GOOGLE APPS SCRIPT) PARA GUARDAR Y CARGAR ---
-  const params = new URLSearchParams({ action, ...data });
+  // Serializar objetos complejos como JSON strings, pero enviar en URLSearchParams (compatible con Apps Script)
+  const dataToSend = { action };
+  
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === 'object' && value !== null) {
+      dataToSend[key] = JSON.stringify(value);
+    } else {
+      dataToSend[key] = value;
+    }
+  }
+  
+  const params = new URLSearchParams(dataToSend);
   const req = await fetch(`${API}?${params.toString()}`, { method: 'POST' });
   const text = await req.text();
   try { return JSON.parse(text); } 
